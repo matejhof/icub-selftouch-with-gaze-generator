@@ -1,0 +1,33 @@
+<application>
+    <name>icubSimSelfTouchWithGaze</name>
+
+    <module>
+        <name>yarprobotinterface</name>
+        <parameters>--context simCartesianControl</parameters>
+        <node>localhost</node>
+        <tag>yarprobotinterface</tag>
+    </module>	
+
+    <module>
+        <name>iKinCartesianSolver</name>
+        <parameters>--context simCartesianControl --part left_arm</parameters>
+        <node>localhost</node>
+        <tag>iKinCartesianSolver</tag>
+    </module>	
+
+    <module>
+        <name>iKinCartesianSolver</name>
+        <parameters>--context simCartesianControl --part right_arm</parameters>
+        <node>localhost</node>
+        <tag>iKinCartesianSolver</tag>
+    </module>	
+
+    <module>
+        <name>iKinGazeCtrl</name>
+        <parameters>--from configSim.ini</parameters>
+        <node>localhost</node>
+        <tag>iKinGazeCtrl</tag>
+    </module>	
+
+</application>
+
