@@ -21,7 +21,12 @@
 #include <iCub/ctrl/neuralNetworks.h>
 
 #define CTRL_THREAD_PER     0.02    // [s]
-#define PRINT_STATUS_PER    1.0     // [s]
+#define TARGET_CUBE_MIN_X   -0.4
+#define TARGET_CUBE_MAX_X   -0.2
+#define TARGET_CUBE_MIN_Y   -0.1
+#define TARGET_CUBE_MAX_Y    0.1
+#define TARGET_CUBE_MIN_Z   -0.1
+#define TARGET_CUBE_MAX_Z    0.1
 
 using namespace std;
 using namespace yarp::os;
@@ -41,14 +46,10 @@ class CtrlThread: public RateThread
 
     Vector curDof, newDof;
 
-    Vector xd;
+    Vector xd; //target position
 
     double trajTime;
     double reachTol;
-
-    double t;
-    double t0;
-    double t1;
 
     void close()
     {
@@ -91,14 +92,13 @@ class CtrlThread: public RateThread
         Property optGazeCtrl("(device gazecontrollerclient)");
 
         optCartLeftArm.put("remote",(fwslash+robot+"/cartesianController/left_arm").c_str());
-        optCartLeftArm.put("local",(name+"/left_arm/cartesian").c_str());
+        optCartLeftArm.put("local",(fwslash+name+"/left_arm/cartesian").c_str());
 
         optCartRightArm.put("remote",(fwslash+robot+"/cartesianController/right_arm").c_str());
-        optCartRightArm.put("local",(name+"/right_arm/cartesian").c_str());
+        optCartRightArm.put("local",(fwslash+name+"/right_arm/cartesian").c_str());
 
         optGazeCtrl.put("remote","/iKinGazeCtrl");
-        optGazeCtrl.put("local",(name+"/gaze").c_str());
-
+        optGazeCtrl.put("local",(fwslash+name+"/gaze").c_str());
 
         drvCartLeftArm=new PolyDriver;
         drvCartRightArm=new PolyDriver;
@@ -142,7 +142,9 @@ class CtrlThread: public RateThread
         icart->getInfo(info);
         fprintf(stdout,"info = %s\n",info.toString().c_str());
 
-        xd.resize(3);
+        drvGazeCtrl->view(gazeCtrl);
+
+        xd.resize(3); //target position
 
         return true;
     }
@@ -153,23 +155,33 @@ class CtrlThread: public RateThread
             fprintf(stdout,"Thread started successfully\n");
         else
             fprintf(stdout,"Thread did not start\n");
-
-        t=t0=t1=Time::now();
     }
 
     virtual void run()
     {
-        t=Time::now();
 
-        generateTarget();
+        //prepare grid to sample points
+        int pointsPerDimension = 10; //in reality, it will be this +1
+        for(int i=0;i<=pointsPerDimension;i++)
+         for(int j=0;j<=pointsPerDimension;j++)
+          for(int k=0;k<=pointsPerDimension;k++)
+            {
+                xd[0]= TARGET_CUBE_MIN_X + i*((TARGET_CUBE_MAX_X-TARGET_CUBE_MIN_X)/pointsPerDimension);
+                xd[1]= TARGET_CUBE_MIN_Y + j*((TARGET_CUBE_MAX_Y-TARGET_CUBE_MIN_Y)/pointsPerDimension);
+                xd[2]= TARGET_CUBE_MIN_Z + k*((TARGET_CUBE_MAX_Z-TARGET_CUBE_MIN_Z)/pointsPerDimension);
+                // go to the target
+                //left arm
+                drvCartLeftArm->view(icart);
+                icart->goToPositionSync(xd);
+                icart->waitMotionDone(0.04);
+                drvCartRightArm->view(icart);
+                icart->goToPositionSync(xd);
+                icart->waitMotionDone(0.04);
+                gazeCtrl->lookAtFixationPointSync(xd);
+                gazeCtrl->waitMotionDone(0.04,0.0);
 
-        // go to the target
-        icart->goToPositionSync(xd);
-        //icart->goToPose(xd,od); // (in streaming)
-        icart->waitMotionDone(0.04);
-
-        // some verbosity
-         printStatus();
+                printStatus(); // some verbosity
+            }
     }
 
 
@@ -184,29 +196,12 @@ class CtrlThread: public RateThread
         close();
     }
 
-    void generateTarget()
-    {
-        // translational target part: a circular trajectory
-        // in the yz plane centered in [-0.3,0.0,0.1] with radius=0.1 m
-        // and frequency 0.1 Hz
-        xd[0]=-0.3;
-        xd[1]=0.1*cos(2.0*M_PI*0.1*(t-t0));
-        xd[2]=0.1+0.1*sin(2.0*M_PI*0.1*(t-t0));
-
-        // we keep the orientation of the left arm constant:
-        // we want the middle finger to point forward (end-effector x-axis)
-        // with the palm turned down (end-effector y-axis points leftward);
-        // to achieve that it is enough to rotate the root frame of pi around z-axis
-        //od[0]=0.0; od[1]=0.0; od[2]=1.0; od[3]=M_PI;
-    }
 
     void printStatus()
     {
-        if (t-t1>=PRINT_STATUS_PER)
-        {
             Vector x,o,xdhat,odhat,qdhat;
 
-             // we get the current arm pose in the
+             // we get the current arm position in the
              // operational space
              icart->getPose(x,o);
 
@@ -216,7 +211,7 @@ class CtrlThread: public RateThread
              icart->getDesired(xdhat,odhat,qdhat);
 
              double e_x=norm(xdhat-x);
-             double e_o=norm(odhat-o);
+
 
              fprintf(stdout,"+++++++++\n");
              fprintf(stdout,"xd          [m] = %s\n",xd.toString().c_str());
@@ -225,8 +220,7 @@ class CtrlThread: public RateThread
              fprintf(stdout,"norm(e_x)   [m] = %g\n",e_x);
              fprintf(stdout,"---------\n\n");
 
-             t1=t;
-         }
+
    }
 };
 
