@@ -39,12 +39,14 @@ class CtrlThread: public RateThread
 {
     protected:
 
-    ICartesianControl *icart;
+    ICartesianControl *cartCtrlLeftArm;
+    ICartesianControl *cartCtrlRightArm;
     IGazeControl      *gazeCtrl;
-    PolyDriver *drvCartLeftArm, *drvCartRightArm;
+    PolyDriver *drvCartLeftArm;
+    PolyDriver *drvCartRightArm;
     PolyDriver *drvGazeCtrl;
 
-    Vector curDof, newDof;
+    Vector curDofLeft, newDofLeft, curDofRight, newDofRight;
 
     Vector xd; //target position
 
@@ -121,28 +123,44 @@ class CtrlThread: public RateThread
             return false;
         }
 
-        drvCartLeftArm->view(icart);
-        drvCartRightArm->view(icart);
-
-        icart->getDOF(curDof);
-        newDof=curDof;
+        drvCartLeftArm->view(cartCtrlLeftArm);
+        cartCtrlLeftArm->getDOF(curDofLeft);
+        newDofLeft=curDofLeft;
         // to disable all torso joints
-        newDof[0]=0;
-        newDof[1]=0;
-        newDof[2]=0;
+        newDofLeft[0]=0;
+        newDofLeft[1]=0;
+        newDofLeft[2]=0;
         // send the request for dofs reconfiguration
-        icart->setDOF(newDof,curDof);
-
-        icart->setTrackingMode(false);
-        icart->setTrajTime(trajTime);
-        icart->setInTargetTol(reachTol);
-
+        cartCtrlLeftArm->setDOF(newDofLeft,curDofLeft);
+        cartCtrlLeftArm->setTrackingMode(false);
+        cartCtrlLeftArm->setTrajTime(trajTime);
+        cartCtrlLeftArm->setInTargetTol(reachTol);
         // print out some info about the controller
-        Bottle info;
-        icart->getInfo(info);
-        fprintf(stdout,"info = %s\n",info.toString().c_str());
+        Bottle infoLA;
+        cartCtrlLeftArm->getInfo(infoLA);
+        fprintf(stdout,"Cart. controller left arm info = %s\n",infoLA.toString().c_str());
+
+        drvCartRightArm->view(cartCtrlRightArm);
+        cartCtrlRightArm->getDOF(curDofRight);
+        newDofRight=curDofRight;
+        // to disable all torso joints
+        newDofRight[0]=0;
+        newDofRight[1]=0;
+        newDofRight[2]=0;
+        // send the request for dofs reconfiguration
+        cartCtrlRightArm->setDOF(newDofRight,curDofRight);
+        cartCtrlRightArm->setTrackingMode(false);
+        cartCtrlRightArm->setTrajTime(trajTime);
+        cartCtrlRightArm->setInTargetTol(reachTol);
+        // print out some info about the controller
+        Bottle infoRA;
+        cartCtrlRightArm->getInfo(infoRA);
+        fprintf(stdout,"Cart. controller right arm info = %s\n",infoRA.toString().c_str());
 
         drvGazeCtrl->view(gazeCtrl);
+        Bottle infoGaze;
+        gazeCtrl->getInfo(infoGaze);
+        fprintf(stdout,"Gaze controller info = %s\n",infoGaze.toString().c_str());
 
         xd.resize(3); //target position
 
@@ -171,16 +189,18 @@ class CtrlThread: public RateThread
                 xd[2]= TARGET_CUBE_MIN_Z + k*((TARGET_CUBE_MAX_Z-TARGET_CUBE_MIN_Z)/pointsPerDimension);
                 // go to the target
                 //left arm
-                drvCartLeftArm->view(icart);
-                icart->goToPositionSync(xd);
-                icart->waitMotionDone(0.04);
-                drvCartRightArm->view(icart);
-                icart->goToPositionSync(xd);
-                icart->waitMotionDone(0.04);
+                drvCartLeftArm->view(cartCtrlLeftArm);
+                cartCtrlLeftArm->goToPositionSync(xd);
+                drvCartRightArm->view(cartCtrlRightArm);
+                cartCtrlRightArm->goToPositionSync(xd);
+                drvGazeCtrl->view(gazeCtrl);
                 gazeCtrl->lookAtFixationPointSync(xd);
+
+                cartCtrlLeftArm->waitMotionDone(0.04);
+                cartCtrlRightArm->waitMotionDone(0.04);
                 gazeCtrl->waitMotionDone(0.04,0.0);
 
-                printStatus(); // some verbosity
+                //printStatus(); // some verbosity
             }
     }
 
@@ -190,7 +210,8 @@ class CtrlThread: public RateThread
     {
         // we require an immediate stop
         // before closing the client for safety reason
-        icart->stopControl();
+        cartCtrlLeftArm->stopControl();
+        cartCtrlRightArm->stopControl();
         gazeCtrl->stopControl();
 
         close();
@@ -203,17 +224,17 @@ class CtrlThread: public RateThread
 
              // we get the current arm position in the
              // operational space
-             icart->getPose(x,o);
+             cartCtrlLeftArm->getPose(x,o);
 
              // we get the final destination of the arm
              // as found by the solver: it differs a bit
              // from the desired pose according to the tolerances
-             icart->getDesired(xdhat,odhat,qdhat);
+             cartCtrlLeftArm->getDesired(xdhat,odhat,qdhat);
 
              double e_x=norm(xdhat-x);
 
 
-             fprintf(stdout,"+++++++++\n");
+             fprintf(stdout,"++left arm+++\n");
              fprintf(stdout,"xd          [m] = %s\n",xd.toString().c_str());
              fprintf(stdout,"xdhat       [m] = %s\n",xdhat.toString().c_str());
              fprintf(stdout,"x           [m] = %s\n",x.toString().c_str());
