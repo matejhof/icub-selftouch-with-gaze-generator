@@ -20,12 +20,12 @@
 #include <yarp/math/Math.h>
 #include <iCub/ctrl/neuralNetworks.h>
 
-#define TARGET_CUBE_MIN_X   -0.4
-#define TARGET_CUBE_MAX_X   -0.2
-#define TARGET_CUBE_MIN_Y   -0.1
-#define TARGET_CUBE_MAX_Y    0.1
-#define TARGET_CUBE_MIN_Z   -0.1
-#define TARGET_CUBE_MAX_Z    0.1
+#define TARGET_CUBE_MIN_X   -0.26
+#define TARGET_CUBE_MAX_X   -0.21
+#define TARGET_CUBE_MIN_Y   -0.05
+#define TARGET_CUBE_MAX_Y    0.05
+#define TARGET_CUBE_MIN_Z    0.0
+#define TARGET_CUBE_MAX_Z    0.07
 #define VISUALIZE_TARGET_IN_ICUBSIM 1
 
 using namespace std;
@@ -141,8 +141,8 @@ class CtrlThread: public Thread
          // 5 - the gaze interface is running
          //     (launch: iKinGazeCtrl --from configSim.ini)
 
-        trajTime = 0.5; //seconds
-        reachTol = 0.00001; // m; we put a very small one for the sake of calibration
+        trajTime = 0.3; //seconds
+        reachTol = 0.001; // m;
         string fwslash="/";
         string name="selftouchWithGazeGenerator";
         string robot="icubSim";
@@ -261,9 +261,14 @@ class CtrlThread: public Thread
 
         int pointsPerDimension = 1; //in reality, it will be this +1
         Vector x_d_sim(3,0.0);
+        Vector xdhat_leftArm, odhat_leftArm, qdhat_leftArm;
+        Vector xdhat_rightArm, odhat_rightArm, qdhat_rightArm;
+        Vector qdhat_gaze; //desired gaze angles
+        Vector x_gaze; //actual fixation point (not possible to obtain desired fixation point from gazeCtrl)
+        double e_x_left, e_x_right; //error between target and desired Cartesian point returned by solver
+        double e_x_gaze; //here error between target and actual fixation point
         while (isStopping() != true)
-        { // the thread continues to run until isStopping() returns true        //prepare grid to sample points
-
+        { // the thread continues to run until isStopping() returns true
             if(VISUALIZE_TARGET_IN_ICUBSIM)
             {
 
@@ -273,6 +278,7 @@ class CtrlThread: public Thread
                 convertPosFromRootToSimFoR(xd,x_d_sim);
                 createStaticSphere(0.03,x_d_sim);
             }
+            //prepare grid to sample points
             for(int i=0;i<=pointsPerDimension;i++)
              for(int j=0;j<=pointsPerDimension;j++)
               for(int k=0;k<=pointsPerDimension;k++)
@@ -287,17 +293,41 @@ class CtrlThread: public Thread
                 }
                // go to the target
                fprintf(stdout,"CtrlThread:run(): Going to target: %.4f %.4f %.4f\n",xd[0],xd[1],xd[2]);
-               drvCartLeftArm->view(cartCtrlLeftArm);
-               cartCtrlLeftArm->goToPositionSync(xd);
-               drvCartRightArm->view(cartCtrlRightArm);
-               cartCtrlRightArm->goToPositionSync(xd);
-               drvGazeCtrl->view(gazeCtrl);
-               gazeCtrl->lookAtFixationPointSync(xd);
-               cartCtrlLeftArm->waitMotionDone(0.04);
-               cartCtrlRightArm->waitMotionDone(0.04);
-               gazeCtrl->waitMotionDone(0.04,0.0);
 
-                //printStatus(); // some verbosity
+               if (! cartCtrlLeftArm->askForPosition(xd,xdhat_leftArm,odhat_leftArm,qdhat_leftArm))
+                   yInfo("  cartCtrlLeftArm->askForPosition could not find solution.");
+               cartCtrlLeftArm->goToPositionSync(xd);
+
+               if (! cartCtrlRightArm->askForPosition(xd,xdhat_rightArm,odhat_rightArm,qdhat_rightArm))
+                   yInfo("  cartCtrlRightArm->askForPosition could not find solution.");
+               cartCtrlRightArm->goToPositionSync(xd);
+
+               if(! gazeCtrl->lookAtFixationPointSync(xd))
+                   yInfo("  gazeCtrl could not find solution.");
+               gazeCtrl->getJointsDesired(qdhat_gaze);
+
+               if (! cartCtrlLeftArm->waitMotionDone(0.04))
+                    yInfo("  cartCtrlLeftArm could not reach solution.");
+               if (! cartCtrlRightArm->waitMotionDone(0.04))
+                   yInfo("  cartCtrlRightArm could not reach solution.");
+               if (! gazeCtrl->waitMotionDone(0.04,0.0))
+                    yInfo("  gazeCtrl could not reach solution.");
+
+               // we get the current arm position in the operational space
+               //cartCtrlLeftArm->getPose(x,o);
+
+               e_x_left=norm(xdhat_leftArm-xd);
+               //fprintf(stdout,"++left arm+++\n");
+               //fprintf(stdout,"xd          [m] = %s\n",xd.toString().c_str());
+               //fprintf(stdout,"xdhat       [m] = %s\n",xdhat.toString().c_str());
+               //fprintf(stdout,"x           [m] = %s\n",x.toString().c_str());
+               fprintf(stdout," left arm (target vs. solver): norm(e_x)   [m] = %g\n",e_x_left);
+               e_x_right=norm(xdhat_rightArm-xd);
+               fprintf(stdout," right arm: (target vs. solver) norm(e_x)   [m] = %g\n",e_x_right);
+               gazeCtrl->getFixationPoint(x_gaze);
+               e_x_gaze=norm(x_gaze-xd);
+               fprintf(stdout," gaze ctrl: (target vs. actual) norm(e_x)   [m] = %g\n",e_x_gaze);
+
               }
            stop();
         }
@@ -331,31 +361,6 @@ class CtrlThread: public Thread
     }
 
 
-    void printStatus()
-    {
-            Vector x,o,xdhat,odhat,qdhat;
-
-             // we get the current arm position in the
-             // operational space
-             cartCtrlLeftArm->getPose(x,o);
-
-             // we get the final destination of the arm
-             // as found by the solver: it differs a bit
-             // from the desired pose according to the tolerances
-             cartCtrlLeftArm->getDesired(xdhat,odhat,qdhat);
-
-             double e_x=norm(xdhat-x);
-
-
-             fprintf(stdout,"++left arm+++\n");
-             fprintf(stdout,"xd          [m] = %s\n",xd.toString().c_str());
-             fprintf(stdout,"xdhat       [m] = %s\n",xdhat.toString().c_str());
-             fprintf(stdout,"x           [m] = %s\n",x.toString().c_str());
-             fprintf(stdout,"norm(e_x)   [m] = %g\n",e_x);
-             fprintf(stdout,"---------\n\n");
-
-
-   }
 };
 
 class CtrlModule: public RFModule
