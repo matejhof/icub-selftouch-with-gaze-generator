@@ -26,6 +26,7 @@
 #define TARGET_CUBE_MAX_Y    0.1
 #define TARGET_CUBE_MIN_Z   -0.1
 #define TARGET_CUBE_MAX_Z    0.1
+#define VISUALIZE_TARGET_IN_ICUBSIM 1
 
 using namespace std;
 using namespace yarp::os;
@@ -45,8 +46,11 @@ class CtrlThread: public Thread
     PolyDriver *drvCartRightArm;
     PolyDriver *drvGazeCtrl;
 
-    Vector curDofLeft, newDofLeft, curDofRight, newDofRight;
+    yarp::os::Port portToSimWorld;
+    yarp::os::Bottle    cmd;
+    yarp::sig::Matrix T_world_root; //homogenous transf. matrix expressing the rotation and translation of FoR from world (simulator) to from robot (Root) FoR
 
+    Vector curDofLeft, newDofLeft, curDofRight, newDofRight;
     Vector xd; //target position
 
     double trajTime;
@@ -57,10 +61,66 @@ class CtrlThread: public Thread
         delete drvCartLeftArm;
         delete drvCartRightArm;
         delete drvGazeCtrl;
+
+        if (portToSimWorld.isOpen())
+        {
+            portToSimWorld.interrupt();
+            portToSimWorld.close();
+        }
     }
 
+    /***** visualizations in iCub simulator ********************************/
 
-    public:
+   void createStaticSphere(double radius, const Vector &pos)
+   {
+       cmd.clear();
+       cmd.addString("world");
+       cmd.addString("mk");
+       cmd.addString("ssph");
+       cmd.addDouble(radius);
+
+       cmd.addDouble(pos(0));
+       cmd.addDouble(pos(1));
+       cmd.addDouble(pos(2));
+       // color
+       cmd.addInt(1);cmd.addInt(0);cmd.addInt(0);
+       cmd.addString("false"); //no collisions
+       yInfo("createSphere(): sending %s \n",cmd.toString().c_str());
+       portToSimWorld.write(cmd);
+   }
+
+   void moveSphere(int index, const Vector &pos)
+   {
+       cmd.clear();
+       cmd.addString("world");
+       cmd.addString("set");
+       cmd.addString("ssph");
+       cmd.addInt(index);
+       cmd.addDouble(pos(0));
+       cmd.addDouble(pos(1));
+       cmd.addDouble(pos(2));
+       portToSimWorld.write(cmd);
+   }
+
+
+   void convertPosFromRootToSimFoR(const Vector &pos, Vector &outPos)
+   {
+       Vector pos_temp = pos;
+       pos_temp.resize(4);
+       pos_temp(3) = 1.0;
+
+       //printf("convertPosFromRootToSimFoR: need to convert %s in icub root FoR to simulator FoR.\n",pos.toString().c_str());
+       //printf("convertPosFromRootToSimFoR: pos in icub root resized to 4, with last value set to 1:%s\n",pos_temp.toString().c_str());
+
+       outPos.resize(4,0.0);
+       outPos = T_world_root * pos_temp;
+       //printf("convertPosFromRootToSimFoR: outPos in simulator FoR:%s\n",outPos.toString().c_str());
+       outPos.resize(3);
+       //printf("convertPosFromRootToSimFoR: outPos after resizing back to 3 values:%s\n",outPos.toString().c_str());
+       return;
+   }
+
+   public:
 
     CtrlThread(): Thread()
     {
@@ -161,6 +221,28 @@ class CtrlThread: public Thread
         gazeCtrl->getInfo(infoGaze);
         fprintf(stdout,"Gaze controller info = %s\n",infoGaze.toString().c_str());
 
+        T_world_root = zeros(4,4);
+        T_world_root(0,1)=-1;
+        T_world_root(1,2)=1; T_world_root(1,3)=0.5976;
+        T_world_root(2,0)=-1; T_world_root(2,3)=-0.026;
+        T_world_root(3,3)=1;
+
+        if(VISUALIZE_TARGET_IN_ICUBSIM)
+        {
+            string port2icubsim = "/" + name + "/sim:o";
+            if (!portToSimWorld.open(port2icubsim.c_str())) {
+                yError("[selftouchWithGazeGenerator] Unable to open port << port2icubsim << endl");
+            }
+            std::string port2world = "/icubSim/world";
+            yarp::os::Network::connect(port2icubsim, port2world.c_str());
+
+            cmd.clear();
+            cmd.addString("world");
+            cmd.addString("del");
+            cmd.addString("all");
+            portToSimWorld.write(cmd);
+        }
+
         xd.resize(3); //target position
 
         return true;
@@ -177,9 +259,20 @@ class CtrlThread: public Thread
     virtual void run()
     {
 
-       while (isStopping() != true)
+        int pointsPerDimension = 1; //in reality, it will be this +1
+        Vector x_d_sim(3,0.0);
+        while (isStopping() != true)
         { // the thread continues to run until isStopping() returns true        //prepare grid to sample points
-            int pointsPerDimension = 1; //in reality, it will be this +1
+
+            if(VISUALIZE_TARGET_IN_ICUBSIM)
+            {
+
+                xd[0]= TARGET_CUBE_MIN_X + ((TARGET_CUBE_MAX_X-TARGET_CUBE_MIN_X)/2.0);
+                xd[1]= TARGET_CUBE_MIN_Y + ((TARGET_CUBE_MAX_Y-TARGET_CUBE_MIN_Y)/2.0);
+                xd[2]= TARGET_CUBE_MIN_Z + ((TARGET_CUBE_MAX_Z-TARGET_CUBE_MIN_Z)/2.0);
+                convertPosFromRootToSimFoR(xd,x_d_sim);
+                createStaticSphere(0.03,x_d_sim);
+            }
             for(int i=0;i<=pointsPerDimension;i++)
              for(int j=0;j<=pointsPerDimension;j++)
               for(int k=0;k<=pointsPerDimension;k++)
@@ -187,17 +280,22 @@ class CtrlThread: public Thread
                 xd[0]= TARGET_CUBE_MIN_X + i*((TARGET_CUBE_MAX_X-TARGET_CUBE_MIN_X)/pointsPerDimension);
                 xd[1]= TARGET_CUBE_MIN_Y + j*((TARGET_CUBE_MAX_Y-TARGET_CUBE_MIN_Y)/pointsPerDimension);
                 xd[2]= TARGET_CUBE_MIN_Z + k*((TARGET_CUBE_MAX_Z-TARGET_CUBE_MIN_Z)/pointsPerDimension);
-                // go to the target
-                fprintf(stdout,"CtrlThread:run(): Going to target: %.4f %.4f %.4f\n",xd[0],xd[1],xd[2]);
-                drvCartLeftArm->view(cartCtrlLeftArm);
-                cartCtrlLeftArm->goToPositionSync(xd);
-                drvCartRightArm->view(cartCtrlRightArm);
-                cartCtrlRightArm->goToPositionSync(xd);
-                drvGazeCtrl->view(gazeCtrl);
-                gazeCtrl->lookAtFixationPointSync(xd);
-                cartCtrlLeftArm->waitMotionDone(0.04);
-                cartCtrlRightArm->waitMotionDone(0.04);
-                gazeCtrl->waitMotionDone(0.04,0.0);
+                if(VISUALIZE_TARGET_IN_ICUBSIM)
+                {
+                    convertPosFromRootToSimFoR(xd,x_d_sim);
+                    moveSphere(1,x_d_sim);
+                }
+               // go to the target
+               fprintf(stdout,"CtrlThread:run(): Going to target: %.4f %.4f %.4f\n",xd[0],xd[1],xd[2]);
+               drvCartLeftArm->view(cartCtrlLeftArm);
+               cartCtrlLeftArm->goToPositionSync(xd);
+               drvCartRightArm->view(cartCtrlRightArm);
+               cartCtrlRightArm->goToPositionSync(xd);
+               drvGazeCtrl->view(gazeCtrl);
+               gazeCtrl->lookAtFixationPointSync(xd);
+               cartCtrlLeftArm->waitMotionDone(0.04);
+               cartCtrlRightArm->waitMotionDone(0.04);
+               gazeCtrl->waitMotionDone(0.04,0.0);
 
                 //printStatus(); // some verbosity
               }
@@ -218,6 +316,16 @@ class CtrlThread: public Thread
         cartCtrlRightArm->stopControl();
         fprintf(stdout,"CtrlThread::threadRelease: gaze control: stopping control.\n");
         gazeCtrl->stopControl();
+
+        if(VISUALIZE_TARGET_IN_ICUBSIM)
+        {
+            fprintf(stdout,"Deleting objects from simulator world.\n");
+            cmd.clear();
+            cmd.addString("world");
+            cmd.addString("del");
+            cmd.addString("all");
+            portToSimWorld.write(cmd);
+        }
 
         close();
     }
