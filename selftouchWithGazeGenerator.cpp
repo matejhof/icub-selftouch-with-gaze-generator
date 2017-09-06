@@ -20,7 +20,6 @@
 #include <yarp/math/Math.h>
 #include <iCub/ctrl/neuralNetworks.h>
 
-#define CTRL_THREAD_PER     0.02    // [s]
 #define TARGET_CUBE_MIN_X   -0.4
 #define TARGET_CUBE_MAX_X   -0.2
 #define TARGET_CUBE_MIN_Y   -0.1
@@ -35,7 +34,7 @@ using namespace yarp::sig;
 using namespace yarp::math;
 using namespace iCub::ctrl;
 
-class CtrlThread: public RateThread
+class CtrlThread: public Thread
 {
     protected:
 
@@ -63,7 +62,7 @@ class CtrlThread: public RateThread
 
     public:
 
-    CtrlThread(int _period): RateThread(_period)
+    CtrlThread(): Thread()
     {
         ;
     }
@@ -178,30 +177,33 @@ class CtrlThread: public RateThread
     virtual void run()
     {
 
-        //prepare grid to sample points
-        int pointsPerDimension = 10; //in reality, it will be this +1
-        for(int i=0;i<=pointsPerDimension;i++)
-         for(int j=0;j<=pointsPerDimension;j++)
-          for(int k=0;k<=pointsPerDimension;k++)
-            {
+       while (isStopping() != true)
+        { // the thread continues to run until isStopping() returns true        //prepare grid to sample points
+            int pointsPerDimension = 1; //in reality, it will be this +1
+            for(int i=0;i<=pointsPerDimension;i++)
+             for(int j=0;j<=pointsPerDimension;j++)
+              for(int k=0;k<=pointsPerDimension;k++)
+              {
                 xd[0]= TARGET_CUBE_MIN_X + i*((TARGET_CUBE_MAX_X-TARGET_CUBE_MIN_X)/pointsPerDimension);
                 xd[1]= TARGET_CUBE_MIN_Y + j*((TARGET_CUBE_MAX_Y-TARGET_CUBE_MIN_Y)/pointsPerDimension);
                 xd[2]= TARGET_CUBE_MIN_Z + k*((TARGET_CUBE_MAX_Z-TARGET_CUBE_MIN_Z)/pointsPerDimension);
                 // go to the target
-                //left arm
+                fprintf(stdout,"CtrlThread:run(): Going to target: %.4f %.4f %.4f\n",xd[0],xd[1],xd[2]);
                 drvCartLeftArm->view(cartCtrlLeftArm);
                 cartCtrlLeftArm->goToPositionSync(xd);
                 drvCartRightArm->view(cartCtrlRightArm);
                 cartCtrlRightArm->goToPositionSync(xd);
                 drvGazeCtrl->view(gazeCtrl);
                 gazeCtrl->lookAtFixationPointSync(xd);
-
                 cartCtrlLeftArm->waitMotionDone(0.04);
                 cartCtrlRightArm->waitMotionDone(0.04);
                 gazeCtrl->waitMotionDone(0.04,0.0);
 
                 //printStatus(); // some verbosity
-            }
+              }
+           stop();
+        }
+
     }
 
 
@@ -210,8 +212,11 @@ class CtrlThread: public RateThread
     {
         // we require an immediate stop
         // before closing the client for safety reason
+        fprintf(stdout,"threadRelease: Cart control left arm: stopping control.\n");
         cartCtrlLeftArm->stopControl();
+        fprintf(stdout,"threadRelease: Cart control right arm: stopping control.\n");
         cartCtrlRightArm->stopControl();
+        fprintf(stdout,"CtrlThread::threadRelease: gaze control: stopping control.\n");
         gazeCtrl->stopControl();
 
         close();
@@ -255,19 +260,18 @@ class CtrlModule: public RFModule
         {
             Time::turboBoost();
 
-            thr=new CtrlThread(CTRL_THREAD_PER);
-            if (!thr->start())
-            {
-                delete thr;
-                return false;
-            }
+            thr=new CtrlThread();
+            thr->start();
 
-           return true;
+            return true;
         }
 
         virtual bool close()
         {
+
+            printf("CtrlModule:close(): will stop thread.\n");
             thr->stop();
+            printf("CtrlModule:close(): called thr->stop(), will delete thr.\n");
             delete thr;
 
             return true;
