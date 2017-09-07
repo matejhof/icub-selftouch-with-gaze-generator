@@ -30,7 +30,7 @@
 #define TARGET_CUBE_MIN_Z    0.0
 #define TARGET_CUBE_MAX_Z    0.07
 #define VISUALIZE_TARGET_IN_ICUBSIM 1
-#define ASK_FOR_ARM_POSE_ONLY 0
+#define ASK_FOR_ARM_POSE_ONLY 1
 #define LOG_INTO_FILE 1
 
 using namespace std;
@@ -277,7 +277,7 @@ class CtrlThread: public Thread
     virtual void run()
     {
 
-        int pointsPerDimension = 1; //in reality, it will be this +1
+        int pointsPerDimension = 19; //in reality, it will be this +1
         Vector x_d_sim(3,0.0);
         Vector xdhat_leftArm, odhat_leftArm, qdhat_leftArm;
         Vector xdhat_rightArm, odhat_rightArm, qdhat_rightArm;
