@@ -29,9 +29,9 @@
 #define TARGET_CUBE_MAX_Y    0.05
 #define TARGET_CUBE_MIN_Z    0.0
 #define TARGET_CUBE_MAX_Z    0.07
-#define POINTS_PER_DIMENSION 19 //resolution of Cartesian grid; in reality, it will be this +1 in every dimension
+#define POINTS_PER_DIMENSION 2 //resolution of Cartesian grid; in reality, it will be this +1 in every dimension
 #define VISUALIZE_TARGET_IN_ICUBSIM 1 //red sphere in icubSim marks the target
-#define ASK_FOR_ARM_POSE_ONLY 1 //to ask for and log solutions for arm poses without commanding the simulator
+#define ASK_FOR_ARM_POSE_ONLY 0 //to ask for and log solutions for arm poses without commanding the simulator
 #define LOG_INTO_FILE 1
 
 
