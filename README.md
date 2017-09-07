@@ -31,7 +31,7 @@ In the iCub Root reference frame:
 ```
 There is a "grid search" through this cube with
 ```c
-#define POINTS_PER_DIMENSION 19; //resolution of Cartesian grid; in reality, it will be this +1 in every dimension
+#define POINTS_PER_DIMENSION 19 //resolution of Cartesian grid; in reality, it will be this +1 in every dimension
 ```
 
 E.g. for `POINTS_PER_DIMENSION 19`, 20 x 20 x 20, i.e. 8000 points will be sampled.
