@@ -29,9 +29,11 @@
 #define TARGET_CUBE_MAX_Y    0.05
 #define TARGET_CUBE_MIN_Z    0.0
 #define TARGET_CUBE_MAX_Z    0.07
-#define VISUALIZE_TARGET_IN_ICUBSIM 1
-#define ASK_FOR_ARM_POSE_ONLY 1
+#define POINTS_PER_DIMENSION 19 //resolution of Cartesian grid; in reality, it will be this +1 in every dimension
+#define VISUALIZE_TARGET_IN_ICUBSIM 1 //red sphere in icubSim marks the target
+#define ASK_FOR_ARM_POSE_ONLY 1 //to ask for and log solutions for arm poses without commanding the simulator
 #define LOG_INTO_FILE 1
+
 
 using namespace std;
 using namespace yarp::os;
@@ -277,7 +279,6 @@ class CtrlThread: public Thread
     virtual void run()
     {
 
-        int pointsPerDimension = 19; //in reality, it will be this +1
         Vector x_d_sim(3,0.0);
         Vector xdhat_leftArm, odhat_leftArm, qdhat_leftArm;
         Vector xdhat_rightArm, odhat_rightArm, qdhat_rightArm;
@@ -297,13 +298,13 @@ class CtrlThread: public Thread
                 createStaticSphere(0.03,x_d_sim);
             }
             //prepare grid to sample points
-            for(int i=0;i<=pointsPerDimension;i++)
-             for(int j=0;j<=pointsPerDimension;j++)
-              for(int k=0;k<=pointsPerDimension;k++)
+            for(int i=0;i<=POINTS_PER_DIMENSION;i++)
+             for(int j=0;j<=POINTS_PER_DIMENSION;j++)
+              for(int k=0;k<=POINTS_PER_DIMENSION;k++)
               {
-                    xd[0]= TARGET_CUBE_MIN_X + i*((TARGET_CUBE_MAX_X-TARGET_CUBE_MIN_X)/pointsPerDimension);
-                    xd[1]= TARGET_CUBE_MIN_Y + j*((TARGET_CUBE_MAX_Y-TARGET_CUBE_MIN_Y)/pointsPerDimension);
-                    xd[2]= TARGET_CUBE_MIN_Z + k*((TARGET_CUBE_MAX_Z-TARGET_CUBE_MIN_Z)/pointsPerDimension);
+                    xd[0]= TARGET_CUBE_MIN_X + i*((TARGET_CUBE_MAX_X-TARGET_CUBE_MIN_X)/POINTS_PER_DIMENSION);
+                    xd[1]= TARGET_CUBE_MIN_Y + j*((TARGET_CUBE_MAX_Y-TARGET_CUBE_MIN_Y)/POINTS_PER_DIMENSION);
+                    xd[2]= TARGET_CUBE_MIN_Z + k*((TARGET_CUBE_MAX_Z-TARGET_CUBE_MIN_Z)/POINTS_PER_DIMENSION);
                     if(VISUALIZE_TARGET_IN_ICUBSIM)
                     {
                         convertPosFromRootToSimFoR(xd,x_d_sim);
