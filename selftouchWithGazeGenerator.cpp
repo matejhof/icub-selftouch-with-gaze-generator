@@ -13,6 +13,9 @@
 
 #include <cstdio>
 #include <cmath>
+#include <iostream>
+#include <fstream>
+#include <iomanip>
 
 #include <yarp/os/all.h>
 #include <yarp/dev/all.h>
@@ -27,6 +30,8 @@
 #define TARGET_CUBE_MIN_Z    0.0
 #define TARGET_CUBE_MAX_Z    0.07
 #define VISUALIZE_TARGET_IN_ICUBSIM 1
+#define ASK_FOR_ARM_POSE_ONLY 0
+#define LOG_INTO_FILE 1
 
 using namespace std;
 using namespace yarp::os;
@@ -48,6 +53,9 @@ class CtrlThread: public Thread
 
     yarp::os::Port portToSimWorld;
     yarp::os::Bottle    cmd;
+
+    ofstream fout_log;
+
     yarp::sig::Matrix T_world_root; //homogenous transf. matrix expressing the rotation and translation of FoR from world (simulator) to from robot (Root) FoR
 
     Vector curDofLeft, newDofLeft, curDofRight, newDofRight;
@@ -67,6 +75,9 @@ class CtrlThread: public Thread
             portToSimWorld.interrupt();
             portToSimWorld.close();
         }
+
+
+        fout_log.close();
     }
 
     /***** visualizations in iCub simulator ********************************/
@@ -227,6 +238,13 @@ class CtrlThread: public Thread
         T_world_root(2,0)=-1; T_world_root(2,3)=-0.026;
         T_world_root(3,3)=1;
 
+
+        if (LOG_INTO_FILE)
+        {
+            yInfo("Opening log file..");
+            fout_log.open("selfTouchConfigs.log");
+        }
+
         if(VISUALIZE_TARGET_IN_ICUBSIM)
         {
             string port2icubsim = "/" + name + "/sim:o";
@@ -283,50 +301,63 @@ class CtrlThread: public Thread
              for(int j=0;j<=pointsPerDimension;j++)
               for(int k=0;k<=pointsPerDimension;k++)
               {
-                xd[0]= TARGET_CUBE_MIN_X + i*((TARGET_CUBE_MAX_X-TARGET_CUBE_MIN_X)/pointsPerDimension);
-                xd[1]= TARGET_CUBE_MIN_Y + j*((TARGET_CUBE_MAX_Y-TARGET_CUBE_MIN_Y)/pointsPerDimension);
-                xd[2]= TARGET_CUBE_MIN_Z + k*((TARGET_CUBE_MAX_Z-TARGET_CUBE_MIN_Z)/pointsPerDimension);
-                if(VISUALIZE_TARGET_IN_ICUBSIM)
-                {
-                    convertPosFromRootToSimFoR(xd,x_d_sim);
-                    moveSphere(1,x_d_sim);
-                }
-               // go to the target
-               fprintf(stdout,"CtrlThread:run(): Going to target: %.4f %.4f %.4f\n",xd[0],xd[1],xd[2]);
+                    xd[0]= TARGET_CUBE_MIN_X + i*((TARGET_CUBE_MAX_X-TARGET_CUBE_MIN_X)/pointsPerDimension);
+                    xd[1]= TARGET_CUBE_MIN_Y + j*((TARGET_CUBE_MAX_Y-TARGET_CUBE_MIN_Y)/pointsPerDimension);
+                    xd[2]= TARGET_CUBE_MIN_Z + k*((TARGET_CUBE_MAX_Z-TARGET_CUBE_MIN_Z)/pointsPerDimension);
+                    if(VISUALIZE_TARGET_IN_ICUBSIM)
+                    {
+                        convertPosFromRootToSimFoR(xd,x_d_sim);
+                        moveSphere(1,x_d_sim);
+                    }
+                   // go to the target
+                   fprintf(stdout,"CtrlThread:run(): Going to target: %.4f %.4f %.4f\n",xd[0],xd[1],xd[2]);
 
-               if (! cartCtrlLeftArm->askForPosition(xd,xdhat_leftArm,odhat_leftArm,qdhat_leftArm))
-                   yInfo("  cartCtrlLeftArm->askForPosition could not find solution.");
-               cartCtrlLeftArm->goToPositionSync(xd);
+                   if (! cartCtrlLeftArm->askForPosition(xd,xdhat_leftArm,odhat_leftArm,qdhat_leftArm))
+                       yInfo("  cartCtrlLeftArm->askForPosition could not find solution.");
+                   if (! ASK_FOR_ARM_POSE_ONLY)
+                       cartCtrlLeftArm->goToPositionSync(xd);
 
-               if (! cartCtrlRightArm->askForPosition(xd,xdhat_rightArm,odhat_rightArm,qdhat_rightArm))
-                   yInfo("  cartCtrlRightArm->askForPosition could not find solution.");
-               cartCtrlRightArm->goToPositionSync(xd);
+                   if (! cartCtrlRightArm->askForPosition(xd,xdhat_rightArm,odhat_rightArm,qdhat_rightArm))
+                       yInfo("  cartCtrlRightArm->askForPosition could not find solution.");
+                   if (! ASK_FOR_ARM_POSE_ONLY)
+                       cartCtrlRightArm->goToPositionSync(xd);
 
-               if(! gazeCtrl->lookAtFixationPointSync(xd))
-                   yInfo("  gazeCtrl could not find solution.");
-               gazeCtrl->getJointsDesired(qdhat_gaze);
+                   if(! gazeCtrl->lookAtFixationPointSync(xd))
+                       yInfo("  gazeCtrl could not find solution.");
+                   gazeCtrl->getJointsDesired(qdhat_gaze);
 
-               if (! cartCtrlLeftArm->waitMotionDone(0.04))
-                    yInfo("  cartCtrlLeftArm could not reach solution.");
-               if (! cartCtrlRightArm->waitMotionDone(0.04))
-                   yInfo("  cartCtrlRightArm could not reach solution.");
-               if (! gazeCtrl->waitMotionDone(0.04,0.0))
-                    yInfo("  gazeCtrl could not reach solution.");
+                   if (! ASK_FOR_ARM_POSE_ONLY)
+                   {
+                       if (! cartCtrlLeftArm->waitMotionDone(0.04))
+                           yInfo("  cartCtrlLeftArm could not reach solution.");
+                       if (! cartCtrlRightArm->waitMotionDone(0.04))
+                           yInfo("  cartCtrlRightArm could not reach solution.");
+                   }
+                   if (! gazeCtrl->waitMotionDone(0.04,0.0))
+                        yInfo("  gazeCtrl could not reach solution.");
 
-               // we get the current arm position in the operational space
-               //cartCtrlLeftArm->getPose(x,o);
+                   // we get the current arm position in the operational space
+                   //cartCtrlLeftArm->getPose(x,o);
 
-               e_x_left=norm(xdhat_leftArm-xd);
-               //fprintf(stdout,"++left arm+++\n");
-               //fprintf(stdout,"xd          [m] = %s\n",xd.toString().c_str());
-               //fprintf(stdout,"xdhat       [m] = %s\n",xdhat.toString().c_str());
-               //fprintf(stdout,"x           [m] = %s\n",x.toString().c_str());
-               fprintf(stdout," left arm (target vs. solver): norm(e_x)   [m] = %g\n",e_x_left);
-               e_x_right=norm(xdhat_rightArm-xd);
-               fprintf(stdout," right arm: (target vs. solver) norm(e_x)   [m] = %g\n",e_x_right);
-               gazeCtrl->getFixationPoint(x_gaze);
-               e_x_gaze=norm(x_gaze-xd);
-               fprintf(stdout," gaze ctrl: (target vs. actual) norm(e_x)   [m] = %g\n",e_x_gaze);
+                   e_x_left=norm(xdhat_leftArm-xd);
+                   //fprintf(stdout,"++left arm+++\n");
+                   //fprintf(stdout,"xd          [m] = %s\n",xd.toString().c_str());
+                   //fprintf(stdout,"xdhat       [m] = %s\n",xdhat.toString().c_str());
+                   //fprintf(stdout,"x           [m] = %s\n",x.toString().c_str());
+                   fprintf(stdout," left arm (target vs. solver): norm(e_x)   [m] = %g\n",e_x_left);
+                   e_x_right=norm(xdhat_rightArm-xd);
+                   fprintf(stdout," right arm: (target vs. solver) norm(e_x)   [m] = %g\n",e_x_right);
+                   gazeCtrl->getFixationPoint(x_gaze);
+                   e_x_gaze=norm(x_gaze-xd);
+                   fprintf(stdout," gaze ctrl: (target vs. actual) norm(e_x)   [m] = %g\n",e_x_gaze);
+
+                   yInfo("%s",xd.toString().c_str());
+                   yInfo("%s",qdhat_leftArm.toString().c_str());
+                   yInfo("%s",qdhat_rightArm.toString().c_str());
+                   yInfo("%s",qdhat_gaze.toString().c_str());
+                   //yInfo("%s %s %s %s",xd.toString.c_str(),qdhat_leftArm.toString().c_str(),qdhat_rightArm.toString().c_str(),qdhat_gaze.toString().c_str());
+                   if(LOG_INTO_FILE)
+                       fout_log<<setprecision(4)<<xd.toString().c_str()<<" "<<qdhat_leftArm.toString().c_str()<<" "<<qdhat_rightArm.toString().c_str()<<" "<<qdhat_gaze.toString().c_str()<<endl;
 
               }
            stop();
