@@ -1,2 +1,83 @@
 # icub-selftouch-with-gaze-generator
-To command the iCub simulator to points in Cartesian space where the end-effectors (palms) would intersect and the robot will simultaneously gaze at them. Note: do not use on the real robot!
+To command the iCub simulator to points in Cartesian space where the end-effectors (palms) would intersect and the robot will simultaneously gaze at them. Logs all the corresponding joint configurations.
+
+Note: **do not use on the real robot!**
+
+Note also that the solutions are a result of optimization and do not match perfectly with the desired target and hence also the 3 chains (2 arms, 1 gaze) do not intersect perfectly in 1 point in the operational space. 
+
+## Requirements and operation
+- `yarpserver`
+- `iCub_SIM`
+
+and as per: `app/scripts/icubSimSelfTouchWithGaze.xml`
+- `yarprobotinterface --context simCartesianControl`
+- `iKinCartesianSolver --context simCartesianControl --part left_arm`
+- `iKinCartesianSolver --context simCartesianControl --part right_arm`
+- `iKinGazeCtrl --from configSim.ini`
+
+Then run `selftouchWithGazeGenerator`
+
+## Parameters
+
+The targets are chosen from a cube where both arms can reach and also where the robot can gaze at them.
+In the iCub Root reference frame:
+```c
+#define TARGET_CUBE_MIN_X   -0.26
+#define TARGET_CUBE_MAX_X   -0.21
+#define TARGET_CUBE_MIN_Y   -0.05
+#define TARGET_CUBE_MAX_Y    0.05
+#define TARGET_CUBE_MIN_Z    0.0
+#define TARGET_CUBE_MAX_Z    0.07 
+```
+There is a "grid search" through this cube with
+```c
+#define POINTS_PER_DIMENSION 19; //resolution of Cartesian grid; in reality, it will be this +1 in every dimension
+```
+
+E.g. for `POINTS_PER_DIMENSION 19`, 20 x 20 x 20, i.e. 8000 points will be sampled.
+
+The user can also choose:
+```c
+#define VISUALIZE_TARGET_IN_ICUBSIM 1 //red sphere in icubSim marks the target
+#define ASK_FOR_ARM_POSE_ONLY 1 //to ask for and log solutions for arm poses without commanding the simulator
+```
+The latter setting can be applied to the arm Cartesian controllers (see also http://wiki.icub.org/brain/icub_cartesian_interface.html); however, this is not possible to apply to the gaze controller that has no such methods and the robot/simulator needs to be commanded (http://wiki.icub.org/iCub/main/dox/html/icub_gaze_interface.html).
+
+```c
+#define LOG_INTO_FILE 1
+```
+
+## Log file
+The modules creates a `selfTouchConfigs.log` log file in the current directory with one row per self-touch configuration and the following structure:
+- columns 1:3: target (x,y,z) (in metres, iCub Root reference frame)
+- columns 4:13: left arm chain (3 torso, 7 arm joints) (deg) 
+- columns 14:23: right arm chain (3 torso, 7 arm joints) (deg) 
+- columns 24:29: head and eyes chain (neck pitch, roll, yaw, eyes tilt, eyes pan, eyes vergence)
+
+## Kinematics version 
+The `iCub_SIM` has kinematics version 1. 
+However, if you want to use this module to generate solutions for kinematics V2, you can set the Cartesian solver to use V2 kinematics in:
+`.local/share/yarp/contexts/simCartesianControl/cartesian/Left_arm_cartesian.xml` 
+
+Change `<param name="KinematicType">left</param>` to `<param name="KinematicType">left_v2</param>` 
+
+`Right_arm_cartesian.xml` 
+
+Change `<param name="KinematicType">right</param>` to `<param name="KinematicType">right_v2</param>`
+
+Then you have to use the `#define ASK_FOR_ARM_POSE_ONLY 1` regime.
+
+For the gaze controller, this is not possible.
+
+## Cartesian solver accuracy
+For this application, we changed in .local/share/yarp/contexts/simCartesianControl/cartesianSolver.ini
+```
+[left_arm]
+tol            0.001 -> 0.0001
+maxIter     200 ->   2000
+[right_arm]
+tol            0.001 -> 0.0001
+maxIter     200 ->   2000
+```
+
+
