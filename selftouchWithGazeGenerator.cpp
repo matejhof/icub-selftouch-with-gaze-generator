@@ -17,22 +17,34 @@
 #include <fstream>
 #include <iomanip>
 
+//for random permutation, using http://www.cplusplus.com/reference/algorithm/random_shuffle/
+#include <algorithm>    // std::random_shuffle
+#include <vector>       // std::vector
+#include <ctime>        // std::time
+#include <cstdlib>      // std::rand, std::srand
+
+//yarp and iCub stuff
 #include <yarp/os/all.h>
 #include <yarp/dev/all.h>
 #include <yarp/sig/Vector.h>
 #include <yarp/math/Math.h>
 #include <iCub/ctrl/neuralNetworks.h>
 
+
+
 #define TARGET_CUBE_MIN_X   -0.26
 #define TARGET_CUBE_MAX_X   -0.21
 #define TARGET_CUBE_MIN_Y   -0.05
 #define TARGET_CUBE_MAX_Y    0.05
 #define TARGET_CUBE_MIN_Z    0.0
+//#define TARGET_CUBE_MAX_Z    0.20
 #define TARGET_CUBE_MAX_Z    0.07
-#define POINTS_PER_DIMENSION 2 //resolution of Cartesian grid; in reality, it will be this +1 in every dimension
+#define POINTS_PER_DIMENSION 19 //resolution of Cartesian grid; in reality, it will be this +1 in every dimension
 #define VISUALIZE_TARGET_IN_ICUBSIM 1 //red sphere in icubSim marks the target
 #define ASK_FOR_ARM_POSE_ONLY 0 //to ask for and log solutions for arm poses without commanding the simulator
 #define LOG_INTO_FILE 1
+#define TARGET_SEQUENCE_RANDOM 1 //if 0, grid with targets is covered systematically;
+//if 1, the points on the grid are chosen following an initial permutation (no repetition of targets)
 
 
 using namespace std;
@@ -81,6 +93,7 @@ class CtrlThread: public Thread
 
         fout_log.close();
     }
+
 
     /***** visualizations in iCub simulator ********************************/
 
@@ -155,7 +168,7 @@ class CtrlThread: public Thread
          //     (launch: iKinGazeCtrl --from configSim.ini)
 
         trajTime = 0.3; //seconds
-        reachTol = 0.001; // m;
+        reachTol = 0.0001; // m;
         string fwslash="/";
         string name="selftouchWithGazeGenerator";
         string robot="icubSim";
@@ -297,14 +310,58 @@ class CtrlThread: public Thread
                 convertPosFromRootToSimFoR(xd,x_d_sim);
                 createStaticSphere(0.03,x_d_sim);
             }
-            //prepare grid to sample points
+
+            //http://www.cplusplus.com/reference/algorithm/random_shuffle/
+            std::srand ( unsigned ( std::time(0) ) );
+            std::vector<int> indexesI_perm;
+            std::vector<int> indexesJ_perm;
+            std::vector<int> indexesK_perm;
+
+            for (int i=0; i<=POINTS_PER_DIMENSION; i++)
+            {
+                indexesI_perm.push_back(i);
+                indexesJ_perm.push_back(i);
+                indexesK_perm.push_back(i);
+            }
+
+            // using built-in random generator:
+            std::random_shuffle ( indexesI_perm.begin(), indexesI_perm.end() );
+            std::random_shuffle ( indexesJ_perm.begin(), indexesJ_perm.end() );
+            std::random_shuffle ( indexesK_perm.begin(), indexesK_perm.end() );
+
+            /*
+            // print out content:
+            std::cout << "permutated indexes I contain:";
+              for (std::vector<int>::iterator it=indexesI_perm.begin(); it!=indexesI_perm.end(); ++it)
+                std::cout << ' ' << *it;
+            std::cout << '\n';
+            std::cout << "permutated indexes J contain:";
+              for (std::vector<int>::iterator it=indexesJ_perm.begin(); it!=indexesJ_perm.end(); ++it)
+                std::cout << ' ' << *it;
+            std::cout << '\n';
+            std::cout << "permutated indexes K contain:";
+              for (std::vector<int>::iterator it=indexesK_perm.begin(); it!=indexesK_perm.end(); ++it)
+                std::cout << ' ' << *it;
+            std::cout << '\n';
+            */
+
+            //sampling points on the grid
             for(int i=0;i<=POINTS_PER_DIMENSION;i++)
              for(int j=0;j<=POINTS_PER_DIMENSION;j++)
               for(int k=0;k<=POINTS_PER_DIMENSION;k++)
               {
-                    xd[0]= TARGET_CUBE_MIN_X + i*((TARGET_CUBE_MAX_X-TARGET_CUBE_MIN_X)/POINTS_PER_DIMENSION);
-                    xd[1]= TARGET_CUBE_MIN_Y + j*((TARGET_CUBE_MAX_Y-TARGET_CUBE_MIN_Y)/POINTS_PER_DIMENSION);
-                    xd[2]= TARGET_CUBE_MIN_Z + k*((TARGET_CUBE_MAX_Z-TARGET_CUBE_MIN_Z)/POINTS_PER_DIMENSION);
+                    if (TARGET_SEQUENCE_RANDOM)
+                    {
+                        xd[0]= TARGET_CUBE_MIN_X + indexesI_perm[i]*((TARGET_CUBE_MAX_X-TARGET_CUBE_MIN_X)/POINTS_PER_DIMENSION);
+                        xd[1]= TARGET_CUBE_MIN_Y + indexesJ_perm[j]*((TARGET_CUBE_MAX_Y-TARGET_CUBE_MIN_Y)/POINTS_PER_DIMENSION);
+                        xd[2]= TARGET_CUBE_MIN_Z + indexesK_perm[k]*((TARGET_CUBE_MAX_Z-TARGET_CUBE_MIN_Z)/POINTS_PER_DIMENSION);
+                    }
+                    else
+                    {
+                        xd[0]= TARGET_CUBE_MIN_X + i*((TARGET_CUBE_MAX_X-TARGET_CUBE_MIN_X)/POINTS_PER_DIMENSION);
+                        xd[1]= TARGET_CUBE_MIN_Y + j*((TARGET_CUBE_MAX_Y-TARGET_CUBE_MIN_Y)/POINTS_PER_DIMENSION);
+                        xd[2]= TARGET_CUBE_MIN_Z + k*((TARGET_CUBE_MAX_Z-TARGET_CUBE_MIN_Z)/POINTS_PER_DIMENSION);
+                    }
                     if(VISUALIZE_TARGET_IN_ICUBSIM)
                     {
                         convertPosFromRootToSimFoR(xd,x_d_sim);
