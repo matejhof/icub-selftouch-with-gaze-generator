@@ -58,7 +58,9 @@ The modules creates a `selfTouchConfigs.log` log file in the current directory w
 
 ## Kinematics version 
 The `iCub_SIM` has kinematics version 1. 
-However, if you want to use this module to generate solutions for kinematics V2, you can set the Cartesian solver to use V2 kinematics in:
+
+
+If you want to use this module to generate solutions for kinematics V2, you can set the Cartesian solver to use V2 kinematics in:
 `.local/share/yarp/contexts/simCartesianControl/cartesian/Left_arm_cartesian.xml` 
 
 Change `<param name="KinematicType">left</param>` to `<param name="KinematicType">left_v2</param>` 
@@ -69,7 +71,9 @@ Change `<param name="KinematicType">right</param>` to `<param name="KinematicTyp
 
 Then you have to use the `#define ASK_FOR_ARM_POSE_ONLY 1` regime.
 
-For the gaze controller, this is not possible.
+However, it seems that in reality, V1 was still being used when tested.
+
+For the gaze controller, it is not possible to choose the kinematics version.
 
 ## Cartesian solver accuracy
 For this application, we changed in .local/share/yarp/contexts/simCartesianControl/cartesianSolver.ini
