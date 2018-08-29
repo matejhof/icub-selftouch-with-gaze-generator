@@ -1,6 +1,8 @@
 # icub-selftouch-with-gaze-generator
 To command the iCub simulator to points in Cartesian space where the end-effectors (palms) would intersect and the robot will simultaneously gaze at them. Logs all the corresponding joint configurations.
 
+The operation is illustrated in this video: https://youtu.be/NySuA0ok0ms
+
 Note: **do not use on the real robot!**
 
 Note also that the solutions are a result of optimization and do not match perfectly with the desired target and hence also the 3 chains (2 arms, 1 gaze) do not intersect perfectly in 1 point in the operational space. 
@@ -56,7 +58,9 @@ The modules creates a `selfTouchConfigs.log` log file in the current directory w
 
 ## Kinematics version 
 The `iCub_SIM` has kinematics version 1. 
-However, if you want to use this module to generate solutions for kinematics V2, you can set the Cartesian solver to use V2 kinematics in:
+
+
+If you want to use this module to generate solutions for kinematics V2, you can set the Cartesian solver to use V2 kinematics in:
 `.local/share/yarp/contexts/simCartesianControl/cartesian/Left_arm_cartesian.xml` 
 
 Change `<param name="KinematicType">left</param>` to `<param name="KinematicType">left_v2</param>` 
@@ -67,7 +71,9 @@ Change `<param name="KinematicType">right</param>` to `<param name="KinematicTyp
 
 Then you have to use the `#define ASK_FOR_ARM_POSE_ONLY 1` regime.
 
-For the gaze controller, this is not possible.
+However, it seems that in reality, V1 was still being used when tested.
+
+For the gaze controller, it is not possible to choose the kinematics version.
 
 ## Cartesian solver accuracy
 For this application, we changed in .local/share/yarp/contexts/simCartesianControl/cartesianSolver.ini
