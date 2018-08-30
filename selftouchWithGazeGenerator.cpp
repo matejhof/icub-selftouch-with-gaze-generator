@@ -362,7 +362,7 @@ class CtrlThread: public Thread
                 convertPosFromRootToSimFoR(xd,x_d_sim);
                 createStaticSphere(0.03,x_d_sim);
             }
-
+            int counter = 1;
             for (std::vector<Indexes3D>::iterator it=indexesIJK.begin(); it!=indexesIJK.end(); ++it)
             {
                 xd[0]= TARGET_CUBE_MIN_X + (*it).indexI*((TARGET_CUBE_MAX_X-TARGET_CUBE_MIN_X)/POINTS_PER_DIMENSION);
@@ -375,7 +375,7 @@ class CtrlThread: public Thread
                     moveSphere(1,x_d_sim);
                 }
                 // go to the target
-                fprintf(stdout,"CtrlThread:run(): Going to target: %.4f %.4f %.4f\n",xd[0],xd[1],xd[2]);
+                fprintf(stdout,"CtrlThread:run(): Going to target: %.4f %.4f %.4f (%d out of %d)\n",xd[0],xd[1],xd[2],counter,indexesIJK.size());
 
                 if (! cartCtrlLeftArm->askForPosition(xd,xdhat_leftArm,odhat_leftArm,qdhat_leftArm))
                     yInfo("  cartCtrlLeftArm->askForPosition could not find solution.");
@@ -423,6 +423,7 @@ class CtrlThread: public Thread
                 //yInfo("%s %s %s %s",xd.toString.c_str(),qdhat_leftArm.toString().c_str(),qdhat_rightArm.toString().c_str(),qdhat_gaze.toString().c_str());
                 if(LOG_INTO_FILE)
                     fout_log<<setprecision(4)<<xd.toString().c_str()<<" "<<qdhat_leftArm.toString().c_str()<<" "<<qdhat_rightArm.toString().c_str()<<" "<<qdhat_gaze.toString().c_str()<<endl;
+                counter++;
             }
             stop();
         }
