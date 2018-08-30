@@ -35,8 +35,12 @@ There is a "grid search" through this cube with
 ```c
 #define POINTS_PER_DIMENSION 19 //resolution of Cartesian grid; in reality, it will be this +1 in every dimension
 ```
-
 E.g. for `POINTS_PER_DIMENSION 19`, 20 x 20 x 20, i.e. 8000 points will be sampled.
+
+With this flag, a random sequence of the targets is followed (a permutation of the order - without repetition).
+```c 
+#define TARGET_SEQUENCE_RANDOM 1
+```
 
 The user can also choose:
 ```c
