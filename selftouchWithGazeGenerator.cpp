@@ -54,6 +54,8 @@ using namespace yarp::sig;
 using namespace yarp::math;
 using namespace iCub::ctrl;
 
+
+
 class CtrlThread: public Thread
 {
     protected:
@@ -78,6 +80,15 @@ class CtrlThread: public Thread
     double trajTime;
     double reachTol;
 
+    struct Indexes3D
+    {
+     int indexI;
+     int indexJ;
+     int indexK;
+    } indexes3D;
+
+    vector<Indexes3D> indexesIJK; //combinations of all three - systematic or permutated (if TARGET_SEQUENCE_RANDOM 1)
+
     void close()
     {
         delete drvCartLeftArm;
@@ -89,7 +100,6 @@ class CtrlThread: public Thread
             portToSimWorld.interrupt();
             portToSimWorld.close();
         }
-
 
         fout_log.close();
     }
@@ -278,7 +288,50 @@ class CtrlThread: public Thread
 
         xd.resize(3); //target position
 
-        return true;
+
+        //fill in the points on the grid - combinations of indexes i,j,k
+        for(int i=0;i<=POINTS_PER_DIMENSION;i++)
+         for(int j=0;j<=POINTS_PER_DIMENSION;j++)
+          for(int k=0;k<=POINTS_PER_DIMENSION;k++)
+          {
+              indexes3D.indexI = i;
+              indexes3D.indexJ = j;
+              indexes3D.indexK = k;
+              indexesIJK.push_back(indexes3D);
+          }
+
+        /*
+        std::cout << "indexesIJK before shuffling:";
+        for (std::vector<Indexes3D>::iterator it=indexesIJK.begin(); it!=indexesIJK.end(); ++it)
+        {
+            std::cout << ' ' << (*it).indexI << ' ' << (*it).indexJ << ' ' << (*it).indexK;
+            std::cout << '\n';
+        }
+        std::cout << '\n \n';
+        */
+
+        if(TARGET_SEQUENCE_RANDOM)
+        {
+            //http://www.cplusplus.com/reference/algorithm/random_shuffle/
+            std::srand ( unsigned ( std::time(0) ) );
+
+            // using built-in random generator:
+            std::random_shuffle ( indexesIJK.begin(), indexesIJK.end() );
+
+            /*
+            std::cout << "indexesIJK after shuffling:";
+            for (std::vector<Indexes3D>::iterator it=indexesIJK.begin(); it!=indexesIJK.end(); ++it)
+            {
+                std::cout << ' ' << (*it).indexI << ' ' << (*it).indexJ << ' ' << (*it).indexK;
+                std::cout << '\n';
+            }
+            std::cout << '\n \n';
+            */
+        }
+
+
+
+       return true;
     }
 
     virtual void afterStart(bool s)
@@ -291,7 +344,6 @@ class CtrlThread: public Thread
 
     virtual void run()
     {
-
         Vector x_d_sim(3,0.0);
         Vector xdhat_leftArm, odhat_leftArm, qdhat_leftArm;
         Vector xdhat_rightArm, odhat_rightArm, qdhat_rightArm;
@@ -311,116 +363,69 @@ class CtrlThread: public Thread
                 createStaticSphere(0.03,x_d_sim);
             }
 
-            //http://www.cplusplus.com/reference/algorithm/random_shuffle/
-            std::srand ( unsigned ( std::time(0) ) );
-            std::vector<int> indexesI_perm;
-            std::vector<int> indexesJ_perm;
-            std::vector<int> indexesK_perm;
-
-            for (int i=0; i<=POINTS_PER_DIMENSION; i++)
+            for (std::vector<Indexes3D>::iterator it=indexesIJK.begin(); it!=indexesIJK.end(); ++it)
             {
-                indexesI_perm.push_back(i);
-                indexesJ_perm.push_back(i);
-                indexesK_perm.push_back(i);
+                xd[0]= TARGET_CUBE_MIN_X + (*it).indexI*((TARGET_CUBE_MAX_X-TARGET_CUBE_MIN_X)/POINTS_PER_DIMENSION);
+                xd[1]= TARGET_CUBE_MIN_Y + (*it).indexJ*((TARGET_CUBE_MAX_Y-TARGET_CUBE_MIN_Y)/POINTS_PER_DIMENSION);
+                xd[2]= TARGET_CUBE_MIN_Z + (*it).indexK*((TARGET_CUBE_MAX_Z-TARGET_CUBE_MIN_Z)/POINTS_PER_DIMENSION);
+
+                if(VISUALIZE_TARGET_IN_ICUBSIM)
+                {
+                    convertPosFromRootToSimFoR(xd,x_d_sim);
+                    moveSphere(1,x_d_sim);
+                }
+                // go to the target
+                fprintf(stdout,"CtrlThread:run(): Going to target: %.4f %.4f %.4f\n",xd[0],xd[1],xd[2]);
+
+                if (! cartCtrlLeftArm->askForPosition(xd,xdhat_leftArm,odhat_leftArm,qdhat_leftArm))
+                    yInfo("  cartCtrlLeftArm->askForPosition could not find solution.");
+                if (! ASK_FOR_ARM_POSE_ONLY)
+                    cartCtrlLeftArm->goToPositionSync(xd);
+
+                if (! cartCtrlRightArm->askForPosition(xd,xdhat_rightArm,odhat_rightArm,qdhat_rightArm))
+                    yInfo("  cartCtrlRightArm->askForPosition could not find solution.");
+                if (! ASK_FOR_ARM_POSE_ONLY)
+                    cartCtrlRightArm->goToPositionSync(xd);
+
+                if(! gazeCtrl->lookAtFixationPointSync(xd))
+                    yInfo("  gazeCtrl could not find solution.");
+                gazeCtrl->getJointsDesired(qdhat_gaze);
+
+                if (! ASK_FOR_ARM_POSE_ONLY)
+                {
+                    if (! cartCtrlLeftArm->waitMotionDone(0.04))
+                        yInfo("  cartCtrlLeftArm could not reach solution.");
+                    if (! cartCtrlRightArm->waitMotionDone(0.04))
+                        yInfo("  cartCtrlRightArm could not reach solution.");
+                }
+                if (! gazeCtrl->waitMotionDone(0.04,0.0))
+                    yInfo("  gazeCtrl could not reach solution.");
+
+                // we get the current arm position in the operational space
+                //cartCtrlLeftArm->getPose(x,o);
+
+                e_x_left=norm(xdhat_leftArm-xd);
+                //fprintf(stdout,"++left arm+++\n");
+                //fprintf(stdout,"xd          [m] = %s\n",xd.toString().c_str());
+                //fprintf(stdout,"xdhat       [m] = %s\n",xdhat.toString().c_str());
+                //fprintf(stdout,"x           [m] = %s\n",x.toString().c_str());
+                fprintf(stdout," left arm (target vs. solver): norm(e_x)   [m] = %g\n",e_x_left);
+                e_x_right=norm(xdhat_rightArm-xd);
+                fprintf(stdout," right arm: (target vs. solver) norm(e_x)   [m] = %g\n",e_x_right);
+                gazeCtrl->getFixationPoint(x_gaze);
+                e_x_gaze=norm(x_gaze-xd);
+                fprintf(stdout," gaze ctrl: (target vs. actual) norm(e_x)   [m] = %g\n",e_x_gaze);
+
+                yInfo("%s",xd.toString().c_str());
+                yInfo("%s",qdhat_leftArm.toString().c_str());
+                yInfo("%s",qdhat_rightArm.toString().c_str());
+                yInfo("%s",qdhat_gaze.toString().c_str());
+                //yInfo("%s %s %s %s",xd.toString.c_str(),qdhat_leftArm.toString().c_str(),qdhat_rightArm.toString().c_str(),qdhat_gaze.toString().c_str());
+                if(LOG_INTO_FILE)
+                    fout_log<<setprecision(4)<<xd.toString().c_str()<<" "<<qdhat_leftArm.toString().c_str()<<" "<<qdhat_rightArm.toString().c_str()<<" "<<qdhat_gaze.toString().c_str()<<endl;
             }
-
-            // using built-in random generator:
-            std::random_shuffle ( indexesI_perm.begin(), indexesI_perm.end() );
-            std::random_shuffle ( indexesJ_perm.begin(), indexesJ_perm.end() );
-            std::random_shuffle ( indexesK_perm.begin(), indexesK_perm.end() );
-
-            /*
-            // print out content:
-            std::cout << "permutated indexes I contain:";
-              for (std::vector<int>::iterator it=indexesI_perm.begin(); it!=indexesI_perm.end(); ++it)
-                std::cout << ' ' << *it;
-            std::cout << '\n';
-            std::cout << "permutated indexes J contain:";
-              for (std::vector<int>::iterator it=indexesJ_perm.begin(); it!=indexesJ_perm.end(); ++it)
-                std::cout << ' ' << *it;
-            std::cout << '\n';
-            std::cout << "permutated indexes K contain:";
-              for (std::vector<int>::iterator it=indexesK_perm.begin(); it!=indexesK_perm.end(); ++it)
-                std::cout << ' ' << *it;
-            std::cout << '\n';
-            */
-
-            //sampling points on the grid
-            for(int i=0;i<=POINTS_PER_DIMENSION;i++)
-             for(int j=0;j<=POINTS_PER_DIMENSION;j++)
-              for(int k=0;k<=POINTS_PER_DIMENSION;k++)
-              {
-                    if (TARGET_SEQUENCE_RANDOM)
-                    {
-                        xd[0]= TARGET_CUBE_MIN_X + indexesI_perm[i]*((TARGET_CUBE_MAX_X-TARGET_CUBE_MIN_X)/POINTS_PER_DIMENSION);
-                        xd[1]= TARGET_CUBE_MIN_Y + indexesJ_perm[j]*((TARGET_CUBE_MAX_Y-TARGET_CUBE_MIN_Y)/POINTS_PER_DIMENSION);
-                        xd[2]= TARGET_CUBE_MIN_Z + indexesK_perm[k]*((TARGET_CUBE_MAX_Z-TARGET_CUBE_MIN_Z)/POINTS_PER_DIMENSION);
-                    }
-                    else
-                    {
-                        xd[0]= TARGET_CUBE_MIN_X + i*((TARGET_CUBE_MAX_X-TARGET_CUBE_MIN_X)/POINTS_PER_DIMENSION);
-                        xd[1]= TARGET_CUBE_MIN_Y + j*((TARGET_CUBE_MAX_Y-TARGET_CUBE_MIN_Y)/POINTS_PER_DIMENSION);
-                        xd[2]= TARGET_CUBE_MIN_Z + k*((TARGET_CUBE_MAX_Z-TARGET_CUBE_MIN_Z)/POINTS_PER_DIMENSION);
-                    }
-                    if(VISUALIZE_TARGET_IN_ICUBSIM)
-                    {
-                        convertPosFromRootToSimFoR(xd,x_d_sim);
-                        moveSphere(1,x_d_sim);
-                    }
-                   // go to the target
-                   fprintf(stdout,"CtrlThread:run(): Going to target: %.4f %.4f %.4f\n",xd[0],xd[1],xd[2]);
-
-                   if (! cartCtrlLeftArm->askForPosition(xd,xdhat_leftArm,odhat_leftArm,qdhat_leftArm))
-                       yInfo("  cartCtrlLeftArm->askForPosition could not find solution.");
-                   if (! ASK_FOR_ARM_POSE_ONLY)
-                       cartCtrlLeftArm->goToPositionSync(xd);
-
-                   if (! cartCtrlRightArm->askForPosition(xd,xdhat_rightArm,odhat_rightArm,qdhat_rightArm))
-                       yInfo("  cartCtrlRightArm->askForPosition could not find solution.");
-                   if (! ASK_FOR_ARM_POSE_ONLY)
-                       cartCtrlRightArm->goToPositionSync(xd);
-
-                   if(! gazeCtrl->lookAtFixationPointSync(xd))
-                       yInfo("  gazeCtrl could not find solution.");
-                   gazeCtrl->getJointsDesired(qdhat_gaze);
-
-                   if (! ASK_FOR_ARM_POSE_ONLY)
-                   {
-                       if (! cartCtrlLeftArm->waitMotionDone(0.04))
-                           yInfo("  cartCtrlLeftArm could not reach solution.");
-                       if (! cartCtrlRightArm->waitMotionDone(0.04))
-                           yInfo("  cartCtrlRightArm could not reach solution.");
-                   }
-                   if (! gazeCtrl->waitMotionDone(0.04,0.0))
-                        yInfo("  gazeCtrl could not reach solution.");
-
-                   // we get the current arm position in the operational space
-                   //cartCtrlLeftArm->getPose(x,o);
-
-                   e_x_left=norm(xdhat_leftArm-xd);
-                   //fprintf(stdout,"++left arm+++\n");
-                   //fprintf(stdout,"xd          [m] = %s\n",xd.toString().c_str());
-                   //fprintf(stdout,"xdhat       [m] = %s\n",xdhat.toString().c_str());
-                   //fprintf(stdout,"x           [m] = %s\n",x.toString().c_str());
-                   fprintf(stdout," left arm (target vs. solver): norm(e_x)   [m] = %g\n",e_x_left);
-                   e_x_right=norm(xdhat_rightArm-xd);
-                   fprintf(stdout," right arm: (target vs. solver) norm(e_x)   [m] = %g\n",e_x_right);
-                   gazeCtrl->getFixationPoint(x_gaze);
-                   e_x_gaze=norm(x_gaze-xd);
-                   fprintf(stdout," gaze ctrl: (target vs. actual) norm(e_x)   [m] = %g\n",e_x_gaze);
-
-                   yInfo("%s",xd.toString().c_str());
-                   yInfo("%s",qdhat_leftArm.toString().c_str());
-                   yInfo("%s",qdhat_rightArm.toString().c_str());
-                   yInfo("%s",qdhat_gaze.toString().c_str());
-                   //yInfo("%s %s %s %s",xd.toString.c_str(),qdhat_leftArm.toString().c_str(),qdhat_rightArm.toString().c_str(),qdhat_gaze.toString().c_str());
-                   if(LOG_INTO_FILE)
-                       fout_log<<setprecision(4)<<xd.toString().c_str()<<" "<<qdhat_leftArm.toString().c_str()<<" "<<qdhat_rightArm.toString().c_str()<<" "<<qdhat_gaze.toString().c_str()<<endl;
-
-              }
-           stop();
+            stop();
         }
-
     }
 
 
