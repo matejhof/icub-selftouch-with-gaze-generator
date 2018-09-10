@@ -26,16 +26,16 @@ In the iCub Root reference frame:
 ```c
 #define TARGET_CUBE_MIN_X   -0.26
 #define TARGET_CUBE_MAX_X   -0.21
-#define TARGET_CUBE_MIN_Y   -0.05
-#define TARGET_CUBE_MAX_Y    0.05
+#define TARGET_CUBE_MIN_Y   -0.1
+#define TARGET_CUBE_MAX_Y    0.1
 #define TARGET_CUBE_MIN_Z    0.0
-#define TARGET_CUBE_MAX_Z    0.07 
+#define TARGET_CUBE_MAX_Z    0.3 
 ```
 There is a "grid search" through this cube with
 ```c
-#define POINTS_PER_DIMENSION 19 //resolution of Cartesian grid; in reality, it will be this +1 in every dimension
+#define POINTS_PER_DIMENSION 24 //resolution of Cartesian grid; in reality, it will be this +1 in every dimension
 ```
-E.g. for `POINTS_PER_DIMENSION 19`, 20 x 20 x 20, i.e. 8000 points will be sampled.
+E.g. for `POINTS_PER_DIMENSION 24`, 25 x 25 x 25, i.e. 15575 points will be sampled.
 
 With this flag, a random sequence of the targets is followed (a permutation of the order - without repetition).
 ```c 
