@@ -1,7 +1,7 @@
 # icub-selftouch-with-gaze-generator
 To command the iCub simulator to points in Cartesian space where the end-effectors (palms) would intersect and the robot will simultaneously gaze at them. Logs all the corresponding joint configurations.
 
-The operation is illustrated in this video: https://youtu.be/NySuA0ok0ms
+The operation is illustrated in this video: https://youtu.be/TX1qlbDYcIU
 
 Note: **do not use on the real robot!**
 
