@@ -33,6 +33,7 @@ add_definitions(-D_USE_MATH_DEFINES)
 
 include_directories(${YARP_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} ${YARP_LIBRARIES})
+target_link_libraries(${PROJECT_NAME} iKin)
 install(TARGETS ${PROJECT_NAME} DESTINATION bin)
 
 # generate ad-hoc project to perform "make uninstall"

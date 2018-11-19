@@ -29,7 +29,7 @@
 #include <yarp/sig/Vector.h>
 #include <yarp/math/Math.h>
 #include <iCub/ctrl/neuralNetworks.h>
-
+#include <iCub/iKin/iKinFwd.h>
 
 /* Datasets 1 and 2 - Nov 2017 and Aug 2018
 #define TARGET_CUBE_MIN_X   -0.26
@@ -41,6 +41,7 @@
 #define POINTS_PER_DIMENSION 19 //resolution of Cartesian grid; in reality, it will be this +1 in every dimension
 */
 
+/* Datasets 3 and 4 - Aug and Nov 2018 */
 #define TARGET_CUBE_MIN_X   -0.26
 #define TARGET_CUBE_MAX_X   -0.21
 #define TARGET_CUBE_MIN_Y   -0.1
@@ -55,6 +56,7 @@
 #define TARGET_SEQUENCE_RANDOM 1 //if 0, grid with targets is covered systematically;
 //if 1, the points on the grid are chosen following an initial permutation (no repetition of targets)
 
+#define USE_FINGER_ON_RIGHT_ARM 1 //if 1, the right arm effector is shifted from palm to tip of index finger
 
 using namespace std;
 using namespace yarp::os;
@@ -75,6 +77,7 @@ class CtrlThread: public Thread
     PolyDriver *drvCartLeftArm;
     PolyDriver *drvCartRightArm;
     PolyDriver *drvGazeCtrl;
+    IEncoders *iencsRightArm; //needed for the USE_FINGER_ON_RIGHT_ARM option
 
     yarp::os::Port portToSimWorld;
     yarp::os::Bottle    cmd;
@@ -390,6 +393,24 @@ class CtrlThread: public Thread
                     yInfo("  cartCtrlLeftArm->askForPosition could not find solution.");
                 if (! ASK_FOR_ARM_POSE_ONLY)
                     cartCtrlLeftArm->goToPositionSync(xd);
+
+                if(USE_FINGER_ON_RIGHT_ARM)
+                {
+                    int nEncs;
+                    iencsRightArm->getAxes(&nEncs);
+                    Vector encs(nEncs);
+                    iencsRightArm->getEncoders(encs.data());
+                    fprintf(stdout,"CtrlThread:run(): Using right index finger as effector\n");
+                    fprintf(stdout,"CtrlThread:run(): rightArm/Hand motor encoders nEcns: %d, encs: %s\n",nEncs,encs.toString().c_str());
+                    Vector rightIndexFingerJointValues;
+                    iCub::iKin::iCubFinger finger("right_index");  // relevant code to get the position of the finger tip
+                    finger.getChainJoints(encs,rightIndexFingerJointValues);   // wrt the end-effector frame
+                    fprintf(stdout,"CtrlThread:run(): rightArm fingers joint values: %s\n", encs.toString().c_str());
+                    Matrix tipFrame=finger.getH((M_PI/180.0)*rightIndexFingerJointValues);
+                    Vector tip_x=tipFrame.getCol(3);
+                    Vector tip_o=yarp::math::dcm2axis(tipFrame);
+                    cartCtrlRightArm->attachTipFrame(tip_x,tip_o);
+                }
 
                 if (! cartCtrlRightArm->askForPosition(xd,xdhat_rightArm,odhat_rightArm,qdhat_rightArm))
                     yInfo("  cartCtrlRightArm->askForPosition could not find solution.");
