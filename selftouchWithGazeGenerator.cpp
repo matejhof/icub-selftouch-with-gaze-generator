@@ -71,21 +71,26 @@ class CtrlThread: public Thread
 {
     protected:
 
-    ICartesianControl *cartCtrlLeftArm;
-    ICartesianControl *cartCtrlRightArm;
-    IGazeControl      *gazeCtrl;
+    yarp::os::Port portToSimWorld;
+    yarp::os::Bottle    cmd;
+    ofstream fout_log;
+
     PolyDriver *drvCartLeftArm;
     PolyDriver *drvCartRightArm;
     PolyDriver *drvGazeCtrl;
     PolyDriver *drvRightArm;
+
+    ICartesianControl *cartCtrlLeftArm;
+    ICartesianControl *cartCtrlRightArm;
+    IGazeControl      *gazeCtrl;
     IEncoders *iencsRightArm; //needed for the USE_FINGER_ON_RIGHT_ARM option
+    IControlMode2     *modeArm;
+    IPositionControl  *posArm;
 
+    Vector armVels;
     iCub::iKin::iCubFinger *finger;
-
-    yarp::os::Port portToSimWorld;
-    yarp::os::Bottle    cmd;
-
-    ofstream fout_log;
+    Vector pointingFingerHandPos;
+    Vector handVels;
 
     yarp::sig::Matrix T_world_root; //homogenous transf. matrix expressing the rotation and translation of FoR from world (simulator) to from robot (Root) FoR
 
@@ -121,6 +126,25 @@ class CtrlThread: public Thread
         fout_log.close();
     }
 
+
+    void pointRightHand()
+    {
+        IControlMode2    *imode=modeArm;
+        IPositionControl *ipos=posArm;
+
+        drvRightArm->view(imode);
+        drvRightArm->view(ipos);
+
+        for (size_t j=0; j<handVels.length(); j++)
+            imode->setControlMode(armVels.length()+j,VOCAB_CM_POSITION);
+
+        for (size_t j=0; j<handVels.length(); j++)
+        {
+            int k=armVels.length()+j;
+            ipos->setRefSpeed(k,handVels[j]);
+            ipos->positionMove(k,(pointingFingerHandPos)[j]);
+        }
+    }
 
     /***** visualizations in iCub simulator ********************************/
 
@@ -173,7 +197,9 @@ class CtrlThread: public Thread
        return;
    }
 
-   public:
+
+
+public:
 
     CtrlThread(): Thread()
     {
@@ -286,7 +312,17 @@ class CtrlThread: public Thread
 
         drvRightArm->view(iencsRightArm);
 
+        armVels.resize(7,0.0);
         finger = new iCub::iKin::iCubFinger;
+        pointingFingerHandPos.resize(9,0.0);
+        // values for pointing hand: https://github.com/robotology/icub-main/blob/master/app/actionsRenderingEngine/conf/hand_sequences.ini#L26
+        //60.0 30.0 18.0 86.0 5.0 1.0 70.0 100.0 200.0
+        pointingFingerHandPos(0)=60.0; pointingFingerHandPos(1)=30.0; pointingFingerHandPos(2)=18.0;
+        pointingFingerHandPos(3)=86.0; pointingFingerHandPos(4)=5.0; pointingFingerHandPos(5)=1.0;
+        pointingFingerHandPos(6)=70.0; pointingFingerHandPos(7)=100.0; pointingFingerHandPos(8)=200.0;
+        handVels.resize(9,10.0);
+        if (USE_FINGER_ON_RIGHT_ARM)
+            pointRightHand();
 
         T_world_root = zeros(4,4);
         T_world_root(0,1)=-1;
