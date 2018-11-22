@@ -427,7 +427,7 @@ public:
                 xd[1]= TARGET_CUBE_MIN_Y + ((TARGET_CUBE_MAX_Y-TARGET_CUBE_MIN_Y)/2.0);
                 xd[2]= TARGET_CUBE_MIN_Z + ((TARGET_CUBE_MAX_Z-TARGET_CUBE_MIN_Z)/2.0);
                 convertPosFromRootToSimFoR(xd,x_d_sim);
-                createStaticSphere(0.03,x_d_sim);
+                createStaticSphere(0.01,x_d_sim);
             }
             int counter = 1;
             for (std::vector<Indexes3D>::iterator it=indexesIJK.begin(); it!=indexesIJK.end(); ++it)
