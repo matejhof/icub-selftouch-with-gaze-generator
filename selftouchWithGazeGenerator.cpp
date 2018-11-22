@@ -77,7 +77,10 @@ class CtrlThread: public Thread
     PolyDriver *drvCartLeftArm;
     PolyDriver *drvCartRightArm;
     PolyDriver *drvGazeCtrl;
+    PolyDriver *drvRightArm;
     IEncoders *iencsRightArm; //needed for the USE_FINGER_ON_RIGHT_ARM option
+
+    iCub::iKin::iCubFinger *finger;
 
     yarp::os::Port portToSimWorld;
     yarp::os::Bottle    cmd;
@@ -106,6 +109,8 @@ class CtrlThread: public Thread
         delete drvCartLeftArm;
         delete drvCartRightArm;
         delete drvGazeCtrl;
+        delete drvRightArm;
+        delete finger;
 
         if (portToSimWorld.isOpen())
         {
@@ -199,6 +204,7 @@ class CtrlThread: public Thread
         Property optCartLeftArm("(device cartesiancontrollerclient)");
         Property optCartRightArm("(device cartesiancontrollerclient)");
         Property optGazeCtrl("(device gazecontrollerclient)");
+        Property optRightArm("(device remote_controlboard)");
 
         optCartLeftArm.put("remote",(fwslash+robot+"/cartesianController/left_arm").c_str());
         optCartLeftArm.put("local",(fwslash+name+"/left_arm/cartesian").c_str());
@@ -209,9 +215,13 @@ class CtrlThread: public Thread
         optGazeCtrl.put("remote","/iKinGazeCtrl");
         optGazeCtrl.put("local",(fwslash+name+"/gaze").c_str());
 
+        optRightArm.put("remote",(fwslash+robot+"/right_arm").c_str());
+        optRightArm.put("local","/local/right_arm");
+
         drvCartLeftArm=new PolyDriver;
         drvCartRightArm=new PolyDriver;
         drvGazeCtrl=new PolyDriver;
+        drvRightArm=new PolyDriver;
         if (!drvCartLeftArm->open(optCartLeftArm))
         {
             close();
@@ -225,6 +235,11 @@ class CtrlThread: public Thread
         }
 
         if (!drvGazeCtrl->open(optGazeCtrl))
+        {
+            close();
+            return false;
+        }
+        if (!drvRightArm->open(optRightArm))
         {
             close();
             return false;
@@ -243,9 +258,9 @@ class CtrlThread: public Thread
         cartCtrlLeftArm->setTrajTime(trajTime);
         cartCtrlLeftArm->setInTargetTol(reachTol);
         // print out some info about the controller
-        Bottle infoLA;
-        cartCtrlLeftArm->getInfo(infoLA);
-        fprintf(stdout,"Cart. controller left arm info = %s\n",infoLA.toString().c_str());
+        Bottle infoCartLA;
+        cartCtrlLeftArm->getInfo(infoCartLA);
+        fprintf(stdout,"Cart. controller left arm info = %s\n",infoCartLA.toString().c_str());
 
         drvCartRightArm->view(cartCtrlRightArm);
         cartCtrlRightArm->getDOF(curDofRight);
@@ -260,14 +275,18 @@ class CtrlThread: public Thread
         cartCtrlRightArm->setTrajTime(trajTime);
         cartCtrlRightArm->setInTargetTol(reachTol);
         // print out some info about the controller
-        Bottle infoRA;
-        cartCtrlRightArm->getInfo(infoRA);
-        fprintf(stdout,"Cart. controller right arm info = %s\n",infoRA.toString().c_str());
+        Bottle infoCartRA;
+        cartCtrlRightArm->getInfo(infoCartRA);
+        fprintf(stdout,"Cart. controller right arm info = %s\n",infoCartRA.toString().c_str());
 
         drvGazeCtrl->view(gazeCtrl);
         Bottle infoGaze;
         gazeCtrl->getInfo(infoGaze);
         fprintf(stdout,"Gaze controller info = %s\n",infoGaze.toString().c_str());
+
+        drvRightArm->view(iencsRightArm);
+
+        finger = new iCub::iKin::iCubFinger;
 
         T_world_root = zeros(4,4);
         T_world_root(0,1)=-1;
@@ -403,10 +422,9 @@ class CtrlThread: public Thread
                     fprintf(stdout,"CtrlThread:run(): Using right index finger as effector\n");
                     fprintf(stdout,"CtrlThread:run(): rightArm/Hand motor encoders nEcns: %d, encs: %s\n",nEncs,encs.toString().c_str());
                     Vector rightIndexFingerJointValues;
-                    iCub::iKin::iCubFinger finger("right_index");  // relevant code to get the position of the finger tip
-                    finger.getChainJoints(encs,rightIndexFingerJointValues);   // wrt the end-effector frame
+                    finger->getChainJoints(encs,rightIndexFingerJointValues);   // wrt the end-effector frame
                     fprintf(stdout,"CtrlThread:run(): rightArm fingers joint values: %s\n", encs.toString().c_str());
-                    Matrix tipFrame=finger.getH((M_PI/180.0)*rightIndexFingerJointValues);
+                    Matrix tipFrame=finger->getH((M_PI/180.0)*rightIndexFingerJointValues);
                     Vector tip_x=tipFrame.getCol(3);
                     Vector tip_o=yarp::math::dcm2axis(tipFrame);
                     cartCtrlRightArm->attachTipFrame(tip_x,tip_o);
