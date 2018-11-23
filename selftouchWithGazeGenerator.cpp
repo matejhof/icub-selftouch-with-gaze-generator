@@ -66,7 +66,6 @@ using namespace yarp::math;
 using namespace iCub::ctrl;
 
 
-
 class CtrlThread: public Thread
 {
     protected:
