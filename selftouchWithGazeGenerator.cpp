@@ -57,6 +57,10 @@
 //if 1, the points on the grid are chosen following an initial permutation (no repetition of targets)
 
 #define USE_FINGER_ON_RIGHT_ARM 1 //if 1, the right arm effector is shifted from palm to tip of index finger
+#define USE_ORIENTATION 1//if 1, the right arm effector (palm/fingertip) will point into the left palm with a given orientation
+// (perpendicular to the palm, but with all 3 dims given)
+
+#define NR_ARM_JOINTS 7 //this is not to be changed by the user
 
 using namespace std;
 using namespace yarp::os;
@@ -77,24 +81,31 @@ class CtrlThread: public Thread
     PolyDriver *drvCartLeftArm;
     PolyDriver *drvCartRightArm;
     PolyDriver *drvGazeCtrl;
+    PolyDriver *drvLeftArm;
     PolyDriver *drvRightArm;
 
     ICartesianControl *cartCtrlLeftArm;
     ICartesianControl *cartCtrlRightArm;
     IGazeControl      *gazeCtrl;
-    IEncoders *iencsRightArm; //needed for the USE_FINGER_ON_RIGHT_ARM option
-    IControlMode2     *modeArm;
-    IPositionControl  *posArm;
+    IEncoders *iencsLeftArm;
+    IEncoders *iencsRightArm;
+    IControlMode2     *modeRightArm;
+    IPositionControl  *posRightArm;
 
     Vector armVels;
-    iCub::iKin::iCubFinger *finger;
+    iCub::iKin::iCubArm *lArm;
+    iCub::iKin::iKinChain  *lArmChain;
+    iCub::iKin::iCubArm *rArm;
+    iCub::iKin::iKinChain  *rArmChain;
+    iCub::iKin::iCubFinger *finger; //will be right arm index finger
     Vector pointingFingerHandPos;
     Vector handVels;
 
     yarp::sig::Matrix T_world_root; //homogenous transf. matrix expressing the rotation and translation of FoR from world (simulator) to from robot (Root) FoR
 
-    Vector curDofLeft, newDofLeft, curDofRight, newDofRight;
+    Vector curCartDofLeft, newCartDofLeft, curCartDofRight, newCartDofRight;
     Vector xd; //target position
+    Vector x_t;  // Current end-effector position
 
     double trajTime;
     double reachTol;
@@ -113,7 +124,10 @@ class CtrlThread: public Thread
         delete drvCartLeftArm;
         delete drvCartRightArm;
         delete drvGazeCtrl;
+        delete drvLeftArm;
         delete drvRightArm;
+        delete lArm;
+        delete rArm;
         delete finger;
 
         if (portToSimWorld.isOpen())
@@ -128,20 +142,18 @@ class CtrlThread: public Thread
 
     void pointRightHand()
     {
-        IControlMode2    *imode=modeArm;
-        IPositionControl *ipos=posArm;
 
-        drvRightArm->view(imode);
-        drvRightArm->view(ipos);
+        drvRightArm->view(modeRightArm);
+        drvRightArm->view(posRightArm);
 
         for (size_t j=0; j<handVels.length(); j++)
-            imode->setControlMode(armVels.length()+j,VOCAB_CM_POSITION);
+            modeRightArm->setControlMode(armVels.length()+j,VOCAB_CM_POSITION);
 
         for (size_t j=0; j<handVels.length(); j++)
         {
             int k=armVels.length()+j;
-            ipos->setRefSpeed(k,handVels[j]);
-            ipos->positionMove(k,(pointingFingerHandPos)[j]);
+            posRightArm->setRefSpeed(k,handVels[j]);
+            posRightArm->positionMove(k,(pointingFingerHandPos)[j]);
         }
     }
 
@@ -229,6 +241,7 @@ public:
         Property optCartLeftArm("(device cartesiancontrollerclient)");
         Property optCartRightArm("(device cartesiancontrollerclient)");
         Property optGazeCtrl("(device gazecontrollerclient)");
+        Property optLeftArm("(device remote_controlboard)");
         Property optRightArm("(device remote_controlboard)");
 
         optCartLeftArm.put("remote",(fwslash+robot+"/cartesianController/left_arm").c_str());
@@ -240,12 +253,16 @@ public:
         optGazeCtrl.put("remote","/iKinGazeCtrl");
         optGazeCtrl.put("local",(fwslash+name+"/gaze").c_str());
 
+        optLeftArm.put("remote",(fwslash+robot+"/left_arm").c_str());
+        optLeftArm.put("local","/local/left_arm");
+
         optRightArm.put("remote",(fwslash+robot+"/right_arm").c_str());
         optRightArm.put("local","/local/right_arm");
 
         drvCartLeftArm=new PolyDriver;
         drvCartRightArm=new PolyDriver;
         drvGazeCtrl=new PolyDriver;
+        drvLeftArm=new PolyDriver;
         drvRightArm=new PolyDriver;
         if (!drvCartLeftArm->open(optCartLeftArm))
         {
@@ -264,6 +281,11 @@ public:
             close();
             return false;
         }
+        if (!drvLeftArm->open(optLeftArm))
+        {
+            close();
+            return false;
+        }
         if (!drvRightArm->open(optRightArm))
         {
             close();
@@ -271,14 +293,14 @@ public:
         }
 
         drvCartLeftArm->view(cartCtrlLeftArm);
-        cartCtrlLeftArm->getDOF(curDofLeft);
-        newDofLeft=curDofLeft;
+        cartCtrlLeftArm->getDOF(curCartDofLeft);
+        newCartDofLeft=curCartDofLeft;
         // to disable all torso joints
-        newDofLeft[0]=0;
-        newDofLeft[1]=0;
-        newDofLeft[2]=0;
+        newCartDofLeft[0]=0;
+        newCartDofLeft[1]=0;
+        newCartDofLeft[2]=0;
         // send the request for dofs reconfiguration
-        cartCtrlLeftArm->setDOF(newDofLeft,curDofLeft);
+        cartCtrlLeftArm->setDOF(newCartDofLeft,curCartDofLeft);
         cartCtrlLeftArm->setTrackingMode(false);
         cartCtrlLeftArm->setTrajTime(trajTime);
         cartCtrlLeftArm->setInTargetTol(reachTol);
@@ -288,14 +310,14 @@ public:
         fprintf(stdout,"Cart. controller left arm info = %s\n",infoCartLA.toString().c_str());
 
         drvCartRightArm->view(cartCtrlRightArm);
-        cartCtrlRightArm->getDOF(curDofRight);
-        newDofRight=curDofRight;
+        cartCtrlRightArm->getDOF(curCartDofRight);
+        newCartDofRight=curCartDofRight;
         // to disable all torso joints
-        newDofRight[0]=0;
-        newDofRight[1]=0;
-        newDofRight[2]=0;
+        newCartDofRight[0]=0;
+        newCartDofRight[1]=0;
+        newCartDofRight[2]=0;
         // send the request for dofs reconfiguration
-        cartCtrlRightArm->setDOF(newDofRight,curDofRight);
+        cartCtrlRightArm->setDOF(newCartDofRight,curCartDofRight);
         cartCtrlRightArm->setTrackingMode(false);
         cartCtrlRightArm->setTrajTime(trajTime);
         cartCtrlRightArm->setInTargetTol(reachTol);
@@ -309,9 +331,14 @@ public:
         gazeCtrl->getInfo(infoGaze);
         fprintf(stdout,"Gaze controller info = %s\n",infoGaze.toString().c_str());
 
+        drvLeftArm->view(iencsLeftArm);
         drvRightArm->view(iencsRightArm);
 
         armVels.resize(7,0.0);
+        lArm = new iCub::iKin::iCubArm("left");
+        lArmChain = lArm->asChain();
+        rArm = new iCub::iKin::iCubArm("right");
+        rArmChain = rArm->asChain();
         finger = new iCub::iKin::iCubFinger;
         pointingFingerHandPos.resize(9,0.0);
         // values for pointing hand: https://github.com/robotology/icub-main/blob/master/app/actionsRenderingEngine/conf/hand_sequences.ini#L26
@@ -328,7 +355,6 @@ public:
         T_world_root(1,2)=1; T_world_root(1,3)=0.5976;
         T_world_root(2,0)=-1; T_world_root(2,3)=-0.026;
         T_world_root(3,3)=1;
-
 
         if (LOG_INTO_FILE)
         {
@@ -353,7 +379,6 @@ public:
         }
 
         xd.resize(3); //target position
-
 
         //fill in the points on the grid - combinations of indexes i,j,k
         for(int i=0;i<=POINTS_PER_DIMENSION;i++)
@@ -395,8 +420,6 @@ public:
             */
         }
 
-
-
        return true;
     }
 
@@ -417,8 +440,10 @@ public:
         Vector x_gaze; //actual fixation point (not possible to obtain desired fixation point from gazeCtrl)
         double e_x_left, e_x_right; //error between target and desired Cartesian point returned by solver
         double e_x_gaze; //here error between target and actual fixation point
+        int nEncsLeftArm, nEncsRightArm;
         while (isStopping() != true)
         { // the thread continues to run until isStopping() returns true
+
             if(VISUALIZE_TARGET_IN_ICUBSIM)
             {
 
@@ -443,6 +468,31 @@ public:
                 // go to the target
                 fprintf(stdout,"CtrlThread:run(): Going to target: %.4f %.4f %.4f (%d out of %d)\n",xd[0],xd[1],xd[2],counter,indexesIJK.size());
 
+                //reade encoders
+                iencsLeftArm->getAxes(&nEncsLeftArm);
+                Vector encsLeftArm(nEncsLeftArm);
+                iencsLeftArm->getEncoders(encsLeftArm.data());
+                iencsRightArm->getAxes(&nEncsRightArm);
+                Vector encsRightArm(nEncsRightArm);
+                iencsRightArm->getEncoders(encsRightArm.data());
+                fprintf(stdout,"CtrlThread:run(): lefttArm/Hand motor encoders nEcns: %d, encs: %s\n",nEncsLeftArm,encsLeftArm.toString().c_str());
+                fprintf(stdout,"CtrlThread:run(): rightArm/Hand motor encoders nEcns: %d, encs: %s\n",nEncsRightArm,encsRightArm.toString().c_str());
+
+                //update chains
+                lArm->setAng((encsLeftArm.subVector(0,NR_ARM_JOINTS-1))*CTRL_DEG2RAD); //take out the fingers; arm chain without torso joints here, encoders are arm only too
+                rArm->setAng((encsRightArm.subVector(0,NR_ARM_JOINTS-1))*CTRL_DEG2RAD);
+
+                //debugging only
+                Vector qLA = lArm->getAng() * CTRL_RAD2DEG;
+                fprintf(stdout,"CtrlThread:run(): lArm joints:\n%s\n", qLA.toString().c_str());
+                Vector qRA = rArm->getAng() * CTRL_RAD2DEG;
+                fprintf(stdout,"CtrlThread:run(): rArm joints:\n%s\n", qRA.toString().c_str());
+                Matrix leftEEframe = lArm->getH();
+                fprintf(stdout,"CtrlThread:run(): left arm EE frame:\n%s\n", leftEEframe.toString().c_str());
+                Matrix rightEEframe = rArm->getH();
+                fprintf(stdout,"CtrlThread:run(): right arm EE frame:\n%s\n", rightEEframe.toString().c_str());
+
+
                 if (! cartCtrlLeftArm->askForPosition(xd,xdhat_leftArm,odhat_leftArm,qdhat_leftArm))
                     yInfo("  cartCtrlLeftArm->askForPosition could not find solution.");
                 if (! ASK_FOR_ARM_POSE_ONLY)
@@ -450,26 +500,39 @@ public:
 
                 if(USE_FINGER_ON_RIGHT_ARM)
                 {
-                    int nEncs;
-                    iencsRightArm->getAxes(&nEncs);
-                    Vector encs(nEncs);
-                    iencsRightArm->getEncoders(encs.data());
+
                     fprintf(stdout,"CtrlThread:run(): Using right index finger as effector\n");
-                    fprintf(stdout,"CtrlThread:run(): rightArm/Hand motor encoders nEcns: %d, encs: %s\n",nEncs,encs.toString().c_str());
                     Vector rightIndexFingerJointValues;
-                    finger->getChainJoints(encs,rightIndexFingerJointValues);   // wrt the end-effector frame
-                    fprintf(stdout,"CtrlThread:run(): rightArm fingers joint values: %s\n", encs.toString().c_str());
+                    finger->getChainJoints(encsRightArm,rightIndexFingerJointValues);   // wrt the end-effector frame
+                    fprintf(stdout,"CtrlThread:run(): right arm finger chain joint values: %s\n", rightIndexFingerJointValues.toString().c_str());
                     Matrix tipFrame=finger->getH((M_PI/180.0)*rightIndexFingerJointValues);
+                    fprintf(stdout,"CtrlThread:run(): right arm finger tip frame:\n%s\n", tipFrame.toString().c_str());
                     Vector tip_x=tipFrame.getCol(3);
                     Vector tip_o=yarp::math::dcm2axis(tipFrame);
                     cartCtrlRightArm->attachTipFrame(tip_x,tip_o);
                 }
-
-                if (! cartCtrlRightArm->askForPosition(xd,xdhat_rightArm,odhat_rightArm,qdhat_rightArm))
-                    yInfo("  cartCtrlRightArm->askForPosition could not find solution.");
-                if (! ASK_FOR_ARM_POSE_ONLY)
-                    cartCtrlRightArm->goToPositionSync(xd);
-
+                if (USE_ORIENTATION)
+                {
+                   Vector lArmEEpose = lArm->EndEffPose(true);
+                   fprintf(stdout,"CtrlThread:run(): left arm EE pose: %s\n", lArmEEpose.toString().c_str());
+                   Vector lArmEEorientationAxisAngle = lArmEEpose.subVector(3,6);
+                   Vector od = lArmEEorientationAxisAngle;
+                   od(2)= lArmEEorientationAxisAngle(2) * -1.0; //we need the opposite direction
+                   fprintf(stdout,"CtrlThread:run():  desired orientation right EE: %s\n", od.toString().c_str());
+                   if (! cartCtrlRightArm->askForPose(xd,od,xdhat_rightArm,odhat_rightArm,qdhat_rightArm))
+                       yInfo("  cartCtrlRightArm->askForPose could not find solution.");
+                   else
+                        fprintf(stdout,"CtrlThread:run():  odhat_rightArm: %s\n", odhat_rightArm.toString().c_str());
+                   if (! ASK_FOR_ARM_POSE_ONLY)
+                       cartCtrlRightArm->goToPoseSync(xd,od);
+                }
+                else
+                {
+                    if (! cartCtrlRightArm->askForPosition(xd,xdhat_rightArm,odhat_rightArm,qdhat_rightArm))
+                        yInfo("  cartCtrlRightArm->askForPosition could not find solution.");
+                    if (! ASK_FOR_ARM_POSE_ONLY)
+                        cartCtrlRightArm->goToPositionSync(xd);
+                }
                 if(! gazeCtrl->lookAtFixationPointSync(xd))
                     yInfo("  gazeCtrl could not find solution.");
                 gazeCtrl->getJointsDesired(qdhat_gaze);
