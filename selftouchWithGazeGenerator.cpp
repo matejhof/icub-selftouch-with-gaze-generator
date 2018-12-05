@@ -16,6 +16,9 @@
 #include <iostream>
 #include <fstream>
 #include <iomanip>
+#include <cstring>
+#include <string>
+
 
 //for random permutation, using http://www.cplusplus.com/reference/algorithm/random_shuffle/
 #include <algorithm>    // std::random_shuffle
@@ -239,6 +242,33 @@ public:
          // 5 - the gaze interface is running
          //     (launch: iKinGazeCtrl --from configSim.ini)
 
+
+        if(VISUALIZE_DATASET)
+        {
+          ifstream ifs;
+          string s;
+
+          double a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29;
+
+          ifs.open("/home/hoffmmat/VERSION_CONTROLLED/icub/icub-selftouch-with-gaze-generator/build/selected_poses.txt",std::ifstream::in);
+          if (ifs.is_open())
+          {
+              yInfo("threadInit(): VISUALIZE_DATASET: successfully opened /home/hoffmmat/VERSION_CONTROLLED/icub/icub-selftouch-with-gaze-generator/build/selected_poses.txt");
+              while(getline(ifs,s))
+              {
+                 std::istringstream iss(s);
+                 if (!(iss >> a1 >> a2 >> a3 >> a4 >> a5 >> a6 >> a7 >> a8 >> a9 >> a10 >> a11 >> a12 >> a13 >> a14 >> a15 >> a16 >> a17 >> a18 >> a19 >> a20 >> a21 >> a22 >> a23 >> a24 >> a25 >> a26 >> a27 >> a28 >> a29))
+                    yError("ERROR: threadInit(): VISUALIZE_DATASET: Error reading dataset values.");
+                 yInfo("just read this line of numbers from file: %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f \n",a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29);
+
+              }
+          }
+          else {
+              // show message:
+              yError("ERROR: threadInit(): VISUALIZE_DATASET: Error opening file /home/hoffmmat/VERSION_CONTROLLED/icub/icub-selftouch-with-gaze-generator/build/selected_poses.txt");
+          }
+        }
+
         trajTime = 0.3; //seconds
         reachTol = 0.0001; // m;
         string fwslash="/";
@@ -434,20 +464,6 @@ public:
             */
         }
 
-        if(VISUALIZE_DATASET)
-        {
-          ifstream ifs("selected_poses.txt");
-          string s;
-          double a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29;
-          while( getline( ifs, s ) )
-          {
-              //istringstream iss( s );
-             s.clear();
-             sscanf(s.c_str(),"%f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f",a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29);
-             printf("threadInit(): just read this line of numbers from file: %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f \n",a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29);
-          }
-
-        }
 
        return true;
     }
