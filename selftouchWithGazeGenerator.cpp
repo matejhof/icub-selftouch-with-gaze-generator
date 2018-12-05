@@ -55,10 +55,10 @@
 #define LOG_INTO_FILE 1
 #define TARGET_SEQUENCE_RANDOM 1 //if 0, grid with targets is covered systematically;
 //if 1, the points on the grid are chosen following an initial permutation (no repetition of targets)
-
 #define USE_FINGER_ON_RIGHT_ARM 1 //if 1, the right arm effector is shifted from palm to tip of index finger
 #define USE_ORIENTATION 0//if 1, the right arm effector (palm/fingertip) will point into the left palm with a given orientation
 // (perpendicular to the palm, but with all 3 dims given)
+#define VISUALIZE_DATASET 1 //will only animate joint configurations from file
 
 #define NR_ARM_JOINTS 7 //this is not to be changed by the user
 
@@ -89,6 +89,8 @@ class CtrlThread: public Thread
     IGazeControl      *gazeCtrl;
     IEncoders *iencsLeftArm;
     IEncoders *iencsRightArm;
+    IControlMode2     *modeLeftArm;
+    IPositionControl  *posLeftArm;
     IControlMode2     *modeRightArm;
     IPositionControl  *posRightArm;
 
@@ -119,6 +121,15 @@ class CtrlThread: public Thread
 
     vector<Indexes3D> indexesIJK; //combinations of all three - systematic or permutated (if TARGET_SEQUENCE_RANDOM 1)
 
+    struct targetAndjointConfiguration
+    {
+       Vector target; //size 3
+       Vector qLA; //size NR_ARM_JOINTS
+       Vector qRA; //size NR_ARM_JOINTS
+    };
+
+    vector<targetAndjointConfiguration> targetAndjoints;
+
     void close()
     {
         delete drvCartLeftArm;
@@ -142,9 +153,6 @@ class CtrlThread: public Thread
 
     void pointRightHand()
     {
-
-        drvRightArm->view(modeRightArm);
-        drvRightArm->view(posRightArm);
 
         for (size_t j=0; j<handVels.length(); j++)
             modeRightArm->setControlMode(armVels.length()+j,VOCAB_CM_POSITION);
@@ -332,7 +340,11 @@ public:
         fprintf(stdout,"Gaze controller info = %s\n",infoGaze.toString().c_str());
 
         drvLeftArm->view(iencsLeftArm);
+        drvLeftArm->view(modeLeftArm);
+        drvLeftArm->view(posLeftArm);
         drvRightArm->view(iencsRightArm);
+        drvRightArm->view(modeRightArm);
+        drvRightArm->view(posRightArm);
 
         armVels.resize(7,0.0);
         lArm = new iCub::iKin::iCubArm("left");
@@ -422,6 +434,21 @@ public:
             */
         }
 
+        if(VISUALIZE_DATASET)
+        {
+          ifstream ifs("selected_poses.txt");
+          string s;
+          double a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29;
+          while( getline( ifs, s ) )
+          {
+              //istringstream iss( s );
+             s.clear();
+             sscanf(s.c_str(),"%f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f",a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29);
+             printf("threadInit(): just read this line of numbers from file: %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f \n",a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29);
+          }
+
+        }
+
        return true;
     }
 
@@ -455,142 +482,191 @@ public:
                 convertPosFromRootToSimFoR(xd,x_d_sim);
                 createStaticSphere(0.01,x_d_sim);
             }
-            int counter = 1;
-            for (std::vector<Indexes3D>::iterator it=indexesIJK.begin(); it!=indexesIJK.end(); ++it)
+
+            if (VISUALIZE_DATASET)
             {
 
-                xd[0]= TARGET_CUBE_MIN_X + (*it).indexI*((TARGET_CUBE_MAX_X-TARGET_CUBE_MIN_X)/POINTS_PER_DIMENSION);
-                xd[1]= TARGET_CUBE_MIN_Y + (*it).indexJ*((TARGET_CUBE_MAX_Y-TARGET_CUBE_MIN_Y)/POINTS_PER_DIMENSION);
-                xd[2]= TARGET_CUBE_MIN_Z + (*it).indexK*((TARGET_CUBE_MAX_Z-TARGET_CUBE_MIN_Z)/POINTS_PER_DIMENSION);
-                fprintf(stdout,"\n\n CtrlThread:run(): target: %.4f %.4f %.4f (%d out of %d)\n",xd[0],xd[1],xd[2],counter,indexesIJK.size());
-
-                //reade encoders
-                iencsLeftArm->getAxes(&nEncsLeftArm);
-                Vector encsLeftArm(nEncsLeftArm);
-                iencsLeftArm->getEncoders(encsLeftArm.data());
-                iencsRightArm->getAxes(&nEncsRightArm);
-                Vector encsRightArm(nEncsRightArm);
-                iencsRightArm->getEncoders(encsRightArm.data());
-                fprintf(stdout,"    lefttArm/Hand motor encoders nEcns: %d, encs:\n %s\n",nEncsLeftArm,encsLeftArm.toString().c_str());
-                fprintf(stdout,"    rightArm/Hand motor encoders nEcns: %d, encs:\n %s\n",nEncsRightArm,encsRightArm.toString().c_str());
-
-                //update chains
-                lArm->setAng((encsLeftArm.subVector(0,NR_ARM_JOINTS-1))*CTRL_DEG2RAD); //take out the fingers; arm chain without torso joints here, encoders are arm only too
-                rArm->setAng((encsRightArm.subVector(0,NR_ARM_JOINTS-1))*CTRL_DEG2RAD);
-
-                //debugging only
-                Vector qLA = lArm->getAng() * CTRL_RAD2DEG;
-                fprintf(stdout,"    lArm joints:\n%s\n", qLA.toString().c_str());
-                Vector qRA = rArm->getAng() * CTRL_RAD2DEG;
-                fprintf(stdout,"    rArm joints:\n%s\n", qRA.toString().c_str());
-                Matrix leftEEframe = lArm->getH();
-                fprintf(stdout,"    left arm EE frame:\n%s\n", leftEEframe.toString().c_str());
-                Matrix rightEEframe = rArm->getH();
-                fprintf(stdout,"    right arm EE frame:\n%s\n", rightEEframe.toString().c_str());
-
+                //columns 1:3: target (x,y,z) (in metres, iCub Root reference frame)
+                //columns 4:13: left arm chain (3 torso, 7 arm joints) (deg)
+                //columns 14:23: right arm chain (3 torso, 7 arm joints) (deg)
+                //columns 24:29: head and eyes chain (neck pitch, roll, yaw, eyes tilt, eyes pan, eyes vergence)
+                // -0.25583	0.008333 0.2875	0.004144	0.000774	-0.00011	-82.195	23.959	57.558	77.413	-0.082054	-6.1247	-3.1478
+                //0.004165	0.000765	0.000111	-42.103	25.138	29.981	98.824	4.8594	-7.4531	-9.3197	-34.23	-69.994	2.4129	-11.913	-3.156	16.905
+                xd[0]= -0.25583;
+                xd[1]= 0.008333;
+                xd[2]= 0.2875;
                 if(VISUALIZE_TARGET_IN_ICUBSIM)
                 {
                     convertPosFromRootToSimFoR(xd,x_d_sim);
                     moveSphere(1,x_d_sim);
                 }
 
-                if (cartCtrlLeftArm->askForPosition(xd,xdhat_leftArm,odhat_leftArm,qdhat_leftArm))
-                {
-                    fprintf(stdout,"    Solution found for left arm: %.4f %.4f %.4f \n", xdhat_leftArm[0],xdhat_leftArm[1],xdhat_leftArm[2]);
-                    //fprintf(stdout,"    Joints found for left arm:\n %s\n", qdhat_leftArm.toString().c_str());
-                }
-                else
-                    yInfo("  cartCtrlLeftArm->askForPosition() could not find solution.");
-                if (! ASK_FOR_ARM_POSE_ONLY)
-                    cartCtrlLeftArm->goToPositionSync(xd);
+                Vector targetJointValuesLArm(NR_ARM_JOINTS,0.0);
+                Vector targetJointValuesRArm(NR_ARM_JOINTS,0.0);
 
-                if(USE_FINGER_ON_RIGHT_ARM)
+                targetJointValuesLArm(0)= -82.195; targetJointValuesLArm(1)= 23.959 ; targetJointValuesLArm(2)= 57.558;
+                targetJointValuesLArm(3)= 77.413; targetJointValuesLArm(4)= -0.082054; targetJointValuesLArm(5)= -6.1247;
+                targetJointValuesLArm(6)= -3.1478;
+
+                targetJointValuesRArm(0)= -42.103; targetJointValuesRArm(1)= 25.138 ; targetJointValuesRArm(2)= 29.981;
+                targetJointValuesRArm(3)= 98.824; targetJointValuesRArm(4)= 4.8594; targetJointValuesRArm(5)= -7.4531;
+                targetJointValuesRArm(6)= -9.3197;
+
+
+                VectorOf<int> jointsToSetA;
+                VectorOf<int> modes;
+                for (int i=0;i<NR_ARM_JOINTS;i++)
+                {
+                    jointsToSetA.push_back(i);
+                    modes.push_back(VOCAB_CM_POSITION);
+                }
+                modeLeftArm->setControlModes(jointsToSetA.size(),jointsToSetA.getFirst(),modes.getFirst());
+                modeRightArm->setControlModes(jointsToSetA.size(),jointsToSetA.getFirst(),modes.getFirst());
+
+                posLeftArm->positionMove(NR_ARM_JOINTS,jointsToSetA.getFirst(),targetJointValuesLArm.data());
+                posRightArm->positionMove(NR_ARM_JOINTS,jointsToSetA.getFirst(),targetJointValuesRArm.data());
+
+            }
+            else
+            {
+                int counter = 1;
+
+                for (std::vector<Indexes3D>::iterator it=indexesIJK.begin(); it!=indexesIJK.end(); ++it)
                 {
 
-                    fprintf(stdout,"    Using right index finger as effector\n");
-                    Vector rightIndexFingerJointValues;
-                    finger->getChainJoints(encsRightArm,rightIndexFingerJointValues);   // wrt the end-effector frame
-                    fprintf(stdout,"    right arm finger chain joint values: %s\n", rightIndexFingerJointValues.toString().c_str());
-                    Matrix tipFrame=finger->getH((M_PI/180.0)*rightIndexFingerJointValues);
-                    fprintf(stdout,"    right arm finger tip frame:\n%s\n", tipFrame.toString().c_str());
-                    Vector tip_x=tipFrame.getCol(3);
-                    Vector tip_o=yarp::math::dcm2axis(tipFrame);
-                    cartCtrlRightArm->attachTipFrame(tip_x,tip_o);
-                }
-                else
-                    cartCtrlRightArm->removeTipFrame();
-                if (USE_ORIENTATION)
-                {
-                   yWarning("Using the orientation is not finished/tested.");
-                   Vector lArmEEpose = lArm->EndEffPose(true);
-                   fprintf(stdout," left arm EE pose: %s\n", lArmEEpose.toString().c_str());
-                   Vector lArmEEorientationAxisAngle = lArmEEpose.subVector(3,6);
-                   fprintf(stdout," left arm EE orientation axis/angle: %s\n", lArmEEorientationAxisAngle.toString().c_str());
-                   Matrix lArmEEorientationDCM = axis2dcm(lArmEEorientationAxisAngle);
-                   fprintf(stdout," left arm EE orientation DCM:\n %s\n", lArmEEorientationDCM.toString().c_str());
-                   Vector od_axisAngle = lArmEEorientationAxisAngle;
-                   od_axisAngle(2)= lArmEEorientationAxisAngle(2) * -1.0; //we need the opposite direction
-                   fprintf(stdout," desired orientation right EE axis/angle: %s\n", od_axisAngle.toString().c_str());
-                   if (cartCtrlRightArm->askForPose(xd,od_axisAngle,xdhat_rightArm,odhat_rightArm,qdhat_rightArm))
-                   {
-                       fprintf(stdout," Solution (xdhat) found for right arm: %.4f %.4f %.4f \n", xdhat_rightArm[0],xdhat_rightArm[1],xdhat_rightArm[2]);
-                       fprintf(stdout," odhat_rightArm: %s\n", odhat_rightArm.toString().c_str());
-                       //fprintf(stdout," Joints found for right arm:\n %s\n", qdhat_rightArm.toString().c_str());
-                   }
-                   else
-                       yInfo("  cartCtrlRightArm->askForPose() could not find solution.");
-                   if (! ASK_FOR_ARM_POSE_ONLY)
-                       cartCtrlRightArm->goToPoseSync(xd,od_axisAngle);
-                }
-                else
-                {
-                    if (cartCtrlRightArm->askForPosition(xd,xdhat_rightArm,odhat_rightArm,qdhat_rightArm))
+                    xd[0]= TARGET_CUBE_MIN_X + (*it).indexI*((TARGET_CUBE_MAX_X-TARGET_CUBE_MIN_X)/POINTS_PER_DIMENSION);
+                    xd[1]= TARGET_CUBE_MIN_Y + (*it).indexJ*((TARGET_CUBE_MAX_Y-TARGET_CUBE_MIN_Y)/POINTS_PER_DIMENSION);
+                    xd[2]= TARGET_CUBE_MIN_Z + (*it).indexK*((TARGET_CUBE_MAX_Z-TARGET_CUBE_MIN_Z)/POINTS_PER_DIMENSION);
+                    fprintf(stdout,"\n\n CtrlThread:run(): target: %.4f %.4f %.4f (%d out of %d)\n",xd[0],xd[1],xd[2],counter,indexesIJK.size());
+
+                    if(VISUALIZE_TARGET_IN_ICUBSIM)
                     {
-                        fprintf(stdout,"    Solution (xdhat) found for right arm: %.4f %.4f %.4f \n", xdhat_rightArm[0],xdhat_rightArm[1],xdhat_rightArm[2]);
-                        //fprintf(stdout,"    Joints found for right arm:\n %s\n", qdhat_rightArm.toString().c_str());
+                        convertPosFromRootToSimFoR(xd,x_d_sim);
+                        moveSphere(1,x_d_sim);
+                    }
+
+                    //reade encoders
+                    iencsLeftArm->getAxes(&nEncsLeftArm);
+                    Vector encsLeftArm(nEncsLeftArm);
+                    iencsLeftArm->getEncoders(encsLeftArm.data());
+                    iencsRightArm->getAxes(&nEncsRightArm);
+                    Vector encsRightArm(nEncsRightArm);
+                    iencsRightArm->getEncoders(encsRightArm.data());
+                    fprintf(stdout,"    lefttArm/Hand motor encoders nEcns: %d, encs:\n %s\n",nEncsLeftArm,encsLeftArm.toString().c_str());
+                    fprintf(stdout,"    rightArm/Hand motor encoders nEcns: %d, encs:\n %s\n",nEncsRightArm,encsRightArm.toString().c_str());
+
+                    //update chains
+                    lArm->setAng((encsLeftArm.subVector(0,NR_ARM_JOINTS-1))*CTRL_DEG2RAD); //take out the fingers; arm chain without torso joints here, encoders are arm only too
+                    rArm->setAng((encsRightArm.subVector(0,NR_ARM_JOINTS-1))*CTRL_DEG2RAD);
+
+                    //debugging only
+                    Vector qLA = lArm->getAng() * CTRL_RAD2DEG;
+                    fprintf(stdout,"    lArm joints:\n%s\n", qLA.toString().c_str());
+                    Vector qRA = rArm->getAng() * CTRL_RAD2DEG;
+                    fprintf(stdout,"    rArm joints:\n%s\n", qRA.toString().c_str());
+                    Matrix leftEEframe = lArm->getH();
+                    fprintf(stdout,"    left arm EE frame:\n%s\n", leftEEframe.toString().c_str());
+                    Matrix rightEEframe = rArm->getH();
+                    fprintf(stdout,"    right arm EE frame:\n%s\n", rightEEframe.toString().c_str());
+
+                    if (cartCtrlLeftArm->askForPosition(xd,xdhat_leftArm,odhat_leftArm,qdhat_leftArm))
+                    {
+                        fprintf(stdout,"    Solution found for left arm: %.4f %.4f %.4f \n", xdhat_leftArm[0],xdhat_leftArm[1],xdhat_leftArm[2]);
+                        //fprintf(stdout,"    Joints found for left arm:\n %s\n", qdhat_leftArm.toString().c_str());
                     }
                     else
-                        yInfo("  cartCtrlRightArm->askForPosition() could not find solution.");
+                        yInfo("  cartCtrlLeftArm->askForPosition() could not find solution.");
                     if (! ASK_FOR_ARM_POSE_ONLY)
-                        cartCtrlRightArm->goToPositionSync(xd);
+                        cartCtrlLeftArm->goToPositionSync(xd);
+
+                    if(USE_FINGER_ON_RIGHT_ARM)
+                    {
+
+                        fprintf(stdout,"    Using right index finger as effector\n");
+                        Vector rightIndexFingerJointValues;
+                        finger->getChainJoints(encsRightArm,rightIndexFingerJointValues);   // wrt the end-effector frame
+                        fprintf(stdout,"    right arm finger chain joint values: %s\n", rightIndexFingerJointValues.toString().c_str());
+                        Matrix tipFrame=finger->getH((M_PI/180.0)*rightIndexFingerJointValues);
+                        fprintf(stdout,"    right arm finger tip frame:\n%s\n", tipFrame.toString().c_str());
+                        Vector tip_x=tipFrame.getCol(3);
+                        Vector tip_o=yarp::math::dcm2axis(tipFrame);
+                        cartCtrlRightArm->attachTipFrame(tip_x,tip_o);
+                    }
+                    else
+                        cartCtrlRightArm->removeTipFrame();
+                    if (USE_ORIENTATION)
+                    {
+                       yWarning("Using the orientation is not finished/tested.");
+                       Vector lArmEEpose = lArm->EndEffPose(true);
+                       fprintf(stdout," left arm EE pose: %s\n", lArmEEpose.toString().c_str());
+                       Vector lArmEEorientationAxisAngle = lArmEEpose.subVector(3,6);
+                       fprintf(stdout," left arm EE orientation axis/angle: %s\n", lArmEEorientationAxisAngle.toString().c_str());
+                       Matrix lArmEEorientationDCM = axis2dcm(lArmEEorientationAxisAngle);
+                       fprintf(stdout," left arm EE orientation DCM:\n %s\n", lArmEEorientationDCM.toString().c_str());
+                       Vector od_axisAngle = lArmEEorientationAxisAngle;
+                       od_axisAngle(2)= lArmEEorientationAxisAngle(2) * -1.0; //we need the opposite direction
+                       fprintf(stdout," desired orientation right EE axis/angle: %s\n", od_axisAngle.toString().c_str());
+                       if (cartCtrlRightArm->askForPose(xd,od_axisAngle,xdhat_rightArm,odhat_rightArm,qdhat_rightArm))
+                       {
+                           fprintf(stdout," Solution (xdhat) found for right arm: %.4f %.4f %.4f \n", xdhat_rightArm[0],xdhat_rightArm[1],xdhat_rightArm[2]);
+                           fprintf(stdout," odhat_rightArm: %s\n", odhat_rightArm.toString().c_str());
+                           //fprintf(stdout," Joints found for right arm:\n %s\n", qdhat_rightArm.toString().c_str());
+                       }
+                       else
+                           yInfo("  cartCtrlRightArm->askForPose() could not find solution.");
+                       if (! ASK_FOR_ARM_POSE_ONLY)
+                           cartCtrlRightArm->goToPoseSync(xd,od_axisAngle);
+                    }
+                    else
+                    {
+                        if (cartCtrlRightArm->askForPosition(xd,xdhat_rightArm,odhat_rightArm,qdhat_rightArm))
+                        {
+                            fprintf(stdout,"    Solution (xdhat) found for right arm: %.4f %.4f %.4f \n", xdhat_rightArm[0],xdhat_rightArm[1],xdhat_rightArm[2]);
+                            //fprintf(stdout,"    Joints found for right arm:\n %s\n", qdhat_rightArm.toString().c_str());
+                        }
+                        else
+                            yInfo("  cartCtrlRightArm->askForPosition() could not find solution.");
+                        if (! ASK_FOR_ARM_POSE_ONLY)
+                            cartCtrlRightArm->goToPositionSync(xd);
+                    }
+                    if(! gazeCtrl->lookAtFixationPointSync(xd))
+                        yInfo("  gazeCtrl could not find solution.");
+                    gazeCtrl->getJointsDesired(qdhat_gaze);
+
+                    if (! ASK_FOR_ARM_POSE_ONLY)
+                    {
+                        if (! cartCtrlLeftArm->waitMotionDone(0.04))
+                            yInfo("  cartCtrlLeftArm could not reach solution.");
+                        if (! cartCtrlRightArm->waitMotionDone(0.04))
+                            yInfo("  cartCtrlRightArm could not reach solution.");
+                    }
+                    if (! gazeCtrl->waitMotionDone(0.04,0.0))
+                        yInfo("  gazeCtrl could not reach solution.");
+
+                    // we get the current arm position in the operational space
+                    //cartCtrlLeftArm->getPose(x,o);
+
+                    e_x_left=norm(xdhat_leftArm-xd);
+                    //fprintf(stdout,"++left arm+++\n");
+                    //fprintf(stdout,"xd          [m] = %s\n",xd.toString().c_str());
+                    //fprintf(stdout,"xdhat       [m] = %s\n",xdhat.toString().c_str());
+                    //fprintf(stdout,"x           [m] = %s\n",x.toString().c_str());
+                    fprintf(stdout," left arm (target vs. solver): norm(e_x)   [m] = %g\n",e_x_left);
+                    e_x_right=norm(xdhat_rightArm-xd);
+                    fprintf(stdout," right arm: (target vs. solver) norm(e_x)   [m] = %g\n",e_x_right);
+                    gazeCtrl->getFixationPoint(x_gaze);
+                    e_x_gaze=norm(x_gaze-xd);
+                    fprintf(stdout," gaze ctrl: (target vs. actual) norm(e_x)   [m] = %g\n",e_x_gaze);
+
+                    yInfo("%s",xd.toString().c_str());
+                    yInfo("qdhat_leftArm: %.4f %.4f %.4f \n %.4f %.4f %.4f %.4f %.4f %.4f %.4f",qdhat_leftArm[0],qdhat_leftArm[1],qdhat_leftArm[2],qdhat_leftArm[3],qdhat_leftArm[4],qdhat_leftArm[5],qdhat_leftArm[6],qdhat_leftArm[7],qdhat_leftArm[8],qdhat_leftArm[9]);
+                    yInfo("qdhat_rightArm: %.4f %.4f %.4f \n %.4f %.4f %.4f %.4f %.4f %.4f %.4f",qdhat_rightArm[0],qdhat_rightArm[1],qdhat_rightArm[2],qdhat_rightArm[3],qdhat_rightArm[4],qdhat_rightArm[5],qdhat_rightArm[6],qdhat_rightArm[7],qdhat_rightArm[8],qdhat_rightArm[9]);
+                    yInfo("qdhat_gaze: %s",qdhat_gaze.toString().c_str());
+                    //yInfo("%s %s %s %s",xd.toString.c_str(),qdhat_leftArm.toString().c_str(),qdhat_rightArm.toString().c_str(),qdhat_gaze.toString().c_str());
+                    if(LOG_INTO_FILE)
+                        fout_log<<setprecision(4)<<xd.toString().c_str()<<" "<<qdhat_leftArm.toString().c_str()<<" "<<qdhat_rightArm.toString().c_str()<<" "<<qdhat_gaze.toString().c_str()<<endl;
+                    counter++;
                 }
-                if(! gazeCtrl->lookAtFixationPointSync(xd))
-                    yInfo("  gazeCtrl could not find solution.");
-                gazeCtrl->getJointsDesired(qdhat_gaze);
-
-                if (! ASK_FOR_ARM_POSE_ONLY)
-                {
-                    if (! cartCtrlLeftArm->waitMotionDone(0.04))
-                        yInfo("  cartCtrlLeftArm could not reach solution.");
-                    if (! cartCtrlRightArm->waitMotionDone(0.04))
-                        yInfo("  cartCtrlRightArm could not reach solution.");
-                }
-                if (! gazeCtrl->waitMotionDone(0.04,0.0))
-                    yInfo("  gazeCtrl could not reach solution.");
-
-                // we get the current arm position in the operational space
-                //cartCtrlLeftArm->getPose(x,o);
-
-                e_x_left=norm(xdhat_leftArm-xd);
-                //fprintf(stdout,"++left arm+++\n");
-                //fprintf(stdout,"xd          [m] = %s\n",xd.toString().c_str());
-                //fprintf(stdout,"xdhat       [m] = %s\n",xdhat.toString().c_str());
-                //fprintf(stdout,"x           [m] = %s\n",x.toString().c_str());
-                fprintf(stdout," left arm (target vs. solver): norm(e_x)   [m] = %g\n",e_x_left);
-                e_x_right=norm(xdhat_rightArm-xd);
-                fprintf(stdout," right arm: (target vs. solver) norm(e_x)   [m] = %g\n",e_x_right);
-                gazeCtrl->getFixationPoint(x_gaze);
-                e_x_gaze=norm(x_gaze-xd);
-                fprintf(stdout," gaze ctrl: (target vs. actual) norm(e_x)   [m] = %g\n",e_x_gaze);
-
-                yInfo("%s",xd.toString().c_str());
-                yInfo("qdhat_leftArm: %.4f %.4f %.4f \n %.4f %.4f %.4f %.4f %.4f %.4f %.4f",qdhat_leftArm[0],qdhat_leftArm[1],qdhat_leftArm[2],qdhat_leftArm[3],qdhat_leftArm[4],qdhat_leftArm[5],qdhat_leftArm[6],qdhat_leftArm[7],qdhat_leftArm[8],qdhat_leftArm[9]);
-                yInfo("qdhat_rightArm: %.4f %.4f %.4f \n %.4f %.4f %.4f %.4f %.4f %.4f %.4f",qdhat_rightArm[0],qdhat_rightArm[1],qdhat_rightArm[2],qdhat_rightArm[3],qdhat_rightArm[4],qdhat_rightArm[5],qdhat_rightArm[6],qdhat_rightArm[7],qdhat_rightArm[8],qdhat_rightArm[9]);
-                yInfo("qdhat_gaze: %s",qdhat_gaze.toString().c_str());
-                //yInfo("%s %s %s %s",xd.toString.c_str(),qdhat_leftArm.toString().c_str(),qdhat_rightArm.toString().c_str(),qdhat_gaze.toString().c_str());
-                if(LOG_INTO_FILE)
-                    fout_log<<setprecision(4)<<xd.toString().c_str()<<" "<<qdhat_leftArm.toString().c_str()<<" "<<qdhat_rightArm.toString().c_str()<<" "<<qdhat_gaze.toString().c_str()<<endl;
-                counter++;
             }
             stop();
         }
