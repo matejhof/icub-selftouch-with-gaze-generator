@@ -57,7 +57,7 @@
 //if 1, the points on the grid are chosen following an initial permutation (no repetition of targets)
 
 #define USE_FINGER_ON_RIGHT_ARM 1 //if 1, the right arm effector is shifted from palm to tip of index finger
-#define USE_ORIENTATION 1//if 1, the right arm effector (palm/fingertip) will point into the left palm with a given orientation
+#define USE_ORIENTATION 0//if 1, the right arm effector (palm/fingertip) will point into the left palm with a given orientation
 // (perpendicular to the palm, but with all 3 dims given)
 
 #define NR_ARM_JOINTS 7 //this is not to be changed by the user
@@ -336,8 +336,10 @@ public:
 
         armVels.resize(7,0.0);
         lArm = new iCub::iKin::iCubArm("left");
+        lArm->setAllConstraints(false); //this is to prevent the object from applying real iCub (strict) joint limits
         lArmChain = lArm->asChain();
-        rArm = new iCub::iKin::iCubArm("right");
+        rArm = new iCub::iKin::iCubArm("right"); //this is to prevent the object from applying real iCub (strict) joint limits
+        lArm->setAllConstraints(false);
         rArmChain = rArm->asChain();
         finger = new iCub::iKin::iCubFinger;
         pointingFingerHandPos.resize(9,0.0);
@@ -519,13 +521,17 @@ public:
                     cartCtrlRightArm->removeTipFrame();
                 if (USE_ORIENTATION)
                 {
+                   yWarning("Using the orientation is not finished/tested.");
                    Vector lArmEEpose = lArm->EndEffPose(true);
                    fprintf(stdout," left arm EE pose: %s\n", lArmEEpose.toString().c_str());
                    Vector lArmEEorientationAxisAngle = lArmEEpose.subVector(3,6);
-                   Vector od = lArmEEorientationAxisAngle;
-                   od(2)= lArmEEorientationAxisAngle(2) * -1.0; //we need the opposite direction
-                   fprintf(stdout," desired orientation right EE: %s\n", od.toString().c_str());
-                   if (cartCtrlRightArm->askForPose(xd,od,xdhat_rightArm,odhat_rightArm,qdhat_rightArm))
+                   fprintf(stdout," left arm EE orientation axis/angle: %s\n", lArmEEorientationAxisAngle.toString().c_str());
+                   Matrix lArmEEorientationDCM = axis2dcm(lArmEEorientationAxisAngle);
+                   fprintf(stdout," left arm EE orientation DCM:\n %s\n", lArmEEorientationDCM.toString().c_str());
+                   Vector od_axisAngle = lArmEEorientationAxisAngle;
+                   od_axisAngle(2)= lArmEEorientationAxisAngle(2) * -1.0; //we need the opposite direction
+                   fprintf(stdout," desired orientation right EE axis/angle: %s\n", od_axisAngle.toString().c_str());
+                   if (cartCtrlRightArm->askForPose(xd,od_axisAngle,xdhat_rightArm,odhat_rightArm,qdhat_rightArm))
                    {
                        fprintf(stdout," Solution (xdhat) found for right arm: %.4f %.4f %.4f \n", xdhat_rightArm[0],xdhat_rightArm[1],xdhat_rightArm[2]);
                        fprintf(stdout," odhat_rightArm: %s\n", odhat_rightArm.toString().c_str());
@@ -534,7 +540,7 @@ public:
                    else
                        yInfo("  cartCtrlRightArm->askForPose() could not find solution.");
                    if (! ASK_FOR_ARM_POSE_ONLY)
-                       cartCtrlRightArm->goToPoseSync(xd,od);
+                       cartCtrlRightArm->goToPoseSync(xd,od_axisAngle);
                 }
                 else
                 {
