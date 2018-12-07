@@ -653,6 +653,8 @@ public:
                         cartCtrlRightArm->removeTipFrame();
                     if (USE_ORIENTATION)
                     {
+                       // NOT TESTED / NOT FINISHED - need to “invert” the orientation extracted from the left palm (invert the z axis) and set it to right index finger
+                       // - not clear how to do it - full 3D orientation will overconstrain the finger
                        yWarning("Using the orientation is not finished/tested.");
                        Vector lArmEEpose = lArm->EndEffPose(true);
                        fprintf(stdout," left arm EE pose: %s\n", lArmEEpose.toString().c_str());
