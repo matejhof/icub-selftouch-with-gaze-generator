@@ -53,7 +53,7 @@
 #define TARGET_CUBE_MAX_Z    0.3
 
 #define POINTS_PER_DIMENSION 24 //resolution of Cartesian grid; in reality, it will be this +1 in every dimension
-#define VISUALIZE_TARGET_IN_ICUBSIM 1 //red sphere in icubSim marks the target
+#define VISUALIZE_TARGET_IN_ICUBSIM 0 //red sphere in icubSim marks the target
 #define ASK_FOR_ARM_POSE_ONLY 0 //to ask for and log solutions for arm poses without commanding the simulator
 #define LOG_INTO_FILE 1
 #define TARGET_SEQUENCE_RANDOM 1 //if 0, grid with targets is covered systematically;
@@ -129,9 +129,9 @@ class CtrlThread: public Thread
        Vector target; //size 3
        Vector qLA; //size NR_ARM_JOINTS
        Vector qRA; //size NR_ARM_JOINTS
-    };
+    } targetAndJoints;
 
-    vector<targetAndjointConfiguration> targetAndjoints;
+    vector<targetAndjointConfiguration> targetAndjointsSTLvector;
 
     void close()
     {
@@ -143,6 +143,9 @@ class CtrlThread: public Thread
         delete lArm;
         delete rArm;
         delete finger;
+
+        indexesIJK.clear();
+        targetAndjointsSTLvector.clear();
 
         if (portToSimWorld.isOpen())
         {
@@ -242,32 +245,6 @@ public:
          // 5 - the gaze interface is running
          //     (launch: iKinGazeCtrl --from configSim.ini)
 
-
-        if(VISUALIZE_DATASET)
-        {
-          ifstream ifs;
-          string s;
-
-          double a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29;
-
-          ifs.open("/home/hoffmmat/VERSION_CONTROLLED/icub/icub-selftouch-with-gaze-generator/build/selected_poses.txt",std::ifstream::in);
-          if (ifs.is_open())
-          {
-              yInfo("threadInit(): VISUALIZE_DATASET: successfully opened /home/hoffmmat/VERSION_CONTROLLED/icub/icub-selftouch-with-gaze-generator/build/selected_poses.txt");
-              while(getline(ifs,s))
-              {
-                 std::istringstream iss(s);
-                 if (!(iss >> a1 >> a2 >> a3 >> a4 >> a5 >> a6 >> a7 >> a8 >> a9 >> a10 >> a11 >> a12 >> a13 >> a14 >> a15 >> a16 >> a17 >> a18 >> a19 >> a20 >> a21 >> a22 >> a23 >> a24 >> a25 >> a26 >> a27 >> a28 >> a29))
-                    yError("ERROR: threadInit(): VISUALIZE_DATASET: Error reading dataset values.");
-                 yInfo("just read this line of numbers from file: %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f \n",a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29);
-
-              }
-          }
-          else {
-              // show message:
-              yError("ERROR: threadInit(): VISUALIZE_DATASET: Error opening file /home/hoffmmat/VERSION_CONTROLLED/icub/icub-selftouch-with-gaze-generator/build/selected_poses.txt");
-          }
-        }
 
         trajTime = 0.3; //seconds
         reachTol = 0.0001; // m;
@@ -464,6 +441,55 @@ public:
             */
         }
 
+        if(VISUALIZE_DATASET)
+        {
+          ifstream ifs;
+          string s;
+
+          double a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29;
+
+          ifs.open("/home/hoffmmat/VERSION_CONTROLLED/icub/icub-selftouch-with-gaze-generator/build/selected_poses.txt",std::ifstream::in);
+          if (ifs.is_open())
+          {
+              yInfo("threadInit(): VISUALIZE_DATASET: successfully opened /home/hoffmmat/VERSION_CONTROLLED/icub/icub-selftouch-with-gaze-generator/build/selected_poses.txt");
+              int n=0;
+              while(getline(ifs,s))
+              {
+                 std::istringstream iss(s);
+                 if (!(iss >> a1 >> a2 >> a3 >> a4 >> a5 >> a6 >> a7 >> a8 >> a9 >> a10 >> a11 >> a12 >> a13 >> a14 >> a15 >> a16 >> a17 >> a18 >> a19 >> a20 >> a21 >> a22 >> a23 >> a24 >> a25 >> a26 >> a27 >> a28 >> a29))
+                    yError("ERROR: threadInit(): VISUALIZE_DATASET: Error reading dataset values.");
+                 //yInfo("just read this line of numbers from file: %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f \n",a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29);
+                 targetAndJoints.target.resize(3,0.0);
+                 targetAndJoints.target(0) = a1;
+                 targetAndJoints.target(1) = a2;
+                 targetAndJoints.target(2) = a3;
+                 targetAndJoints.qLA.resize(7,0.0);
+                 targetAndJoints.qLA(0) = a7;
+                 targetAndJoints.qLA(1) = a8;
+                 targetAndJoints.qLA(2) = a9;
+                 targetAndJoints.qLA(3) = a10;
+                 targetAndJoints.qLA(4) = a11;
+                 targetAndJoints.qLA(5) = a12;
+                 targetAndJoints.qLA(6) = a13;
+                 targetAndJoints.qRA.resize(7,0.0);
+                 targetAndJoints.qRA(0) = a17;
+                 targetAndJoints.qRA(1) = a18;
+                 targetAndJoints.qRA(2) = a19;
+                 targetAndJoints.qRA(3) = a20;
+                 targetAndJoints.qRA(4) = a21;
+                 targetAndJoints.qRA(5) = a22;
+                 targetAndJoints.qRA(6) = a23;
+                 targetAndjointsSTLvector.push_back(targetAndJoints);
+                 n++;
+              }
+              yInfo("threadInit(): VISUALIZE_DATASET: successfully read %d lines from file.",n);
+          }
+          else {
+              // show message:
+              yError("ERROR: threadInit(): VISUALIZE_DATASET: Error opening file /home/hoffmmat/VERSION_CONTROLLED/icub/icub-selftouch-with-gaze-generator/build/selected_poses.txt");
+          }
+        }
+
 
        return true;
     }
@@ -496,7 +522,7 @@ public:
                 xd[1]= TARGET_CUBE_MIN_Y + ((TARGET_CUBE_MAX_Y-TARGET_CUBE_MIN_Y)/2.0);
                 xd[2]= TARGET_CUBE_MIN_Z + ((TARGET_CUBE_MAX_Z-TARGET_CUBE_MIN_Z)/2.0);
                 convertPosFromRootToSimFoR(xd,x_d_sim);
-                createStaticSphere(0.01,x_d_sim);
+                createStaticSphere(0.015,x_d_sim);
             }
 
             if (VISUALIZE_DATASET)
@@ -508,39 +534,54 @@ public:
                 //columns 24:29: head and eyes chain (neck pitch, roll, yaw, eyes tilt, eyes pan, eyes vergence)
                 // -0.25583	0.008333 0.2875	0.004144	0.000774	-0.00011	-82.195	23.959	57.558	77.413	-0.082054	-6.1247	-3.1478
                 //0.004165	0.000765	0.000111	-42.103	25.138	29.981	98.824	4.8594	-7.4531	-9.3197	-34.23	-69.994	2.4129	-11.913	-3.156	16.905
-                xd[0]= -0.25583;
-                xd[1]= 0.008333;
-                xd[2]= 0.2875;
-                if(VISUALIZE_TARGET_IN_ICUBSIM)
+                //xd[0]= -0.25583;
+                //xd[1]= 0.008333;
+                //xd[2]= 0.2875;
+                //targetJointValuesLArm(0)= -82.195; targetJointValuesLArm(1)= 23.959 ; targetJointValuesLArm(2)= 57.558;
+                //targetJointValuesLArm(3)= 77.413; targetJointValuesLArm(4)= -0.082054; targetJointValuesLArm(5)= -6.1247;
+                //targetJointValuesLArm(6)= -3.1478;
+                //targetJointValuesRArm(0)= -42.103; targetJointValuesRArm(1)= 25.138 ; targetJointValuesRArm(2)= 29.981;
+                //targetJointValuesRArm(3)= 98.824; targetJointValuesRArm(4)= 4.8594; targetJointValuesRArm(5)= -7.4531;
+                //targetJointValuesRArm(6)= -9.3197;
+                int m=0;
+                for (std::vector<targetAndjointConfiguration>::iterator it=targetAndjointsSTLvector.begin(); it!=targetAndjointsSTLvector.end(); ++it)
                 {
-                    convertPosFromRootToSimFoR(xd,x_d_sim);
-                    moveSphere(1,x_d_sim);
+                    m++;
+                    yInfo("CtrlThread:run():VISUALIZE_DATASET: pose %d out of %d.",m,targetAndjointsSTLvector.size());
+                    xd[0]=(*it).target(0);
+                    xd[1]=(*it).target(1);
+                    xd[2]=(*it).target(2);
+                    if(VISUALIZE_TARGET_IN_ICUBSIM)
+                    {
+                        convertPosFromRootToSimFoR(xd,x_d_sim);
+                        moveSphere(1,x_d_sim);
+                    }
+
+                    //Vector targetJointValuesLArm(NR_ARM_JOINTS,0.0);
+                    //Vector targetJointValuesRArm(NR_ARM_JOINTS,0.0);
+
+                    VectorOf<int> jointsToSetA;
+                    VectorOf<int> modes;
+                    for (int i=0;i<NR_ARM_JOINTS;i++)
+                    {
+                        jointsToSetA.push_back(i);
+                        modes.push_back(VOCAB_CM_POSITION);
+                    }
+                    modeLeftArm->setControlModes(jointsToSetA.size(),jointsToSetA.getFirst(),modes.getFirst());
+                    modeRightArm->setControlModes(jointsToSetA.size(),jointsToSetA.getFirst(),modes.getFirst());
+
+                    posLeftArm->positionMove(NR_ARM_JOINTS,jointsToSetA.getFirst(),(*it).qLA.data());
+                    posRightArm->positionMove(NR_ARM_JOINTS,jointsToSetA.getFirst(),(*it).qRA.data());
+                    //posLeftArm->positionMove(NR_ARM_JOINTS,jointsToSetA.getFirst(),targetJointValuesLArm.data());
+                    //posRightArm->positionMove(NR_ARM_JOINTS,jointsToSetA.getFirst(),targetJointValuesRArm.data());
+
+                    //this part is not reanimated from dataset but solved again online - this will also make the break between postures
+                    if(! gazeCtrl->lookAtFixationPointSync(xd))
+                        yInfo("  gazeCtrl could not find solution.");
+                    gazeCtrl->getJointsDesired(qdhat_gaze);
+                    if (! gazeCtrl->waitMotionDone(0.04,0.0))
+                        yInfo("  gazeCtrl could not reach solution.");
                 }
-
-                Vector targetJointValuesLArm(NR_ARM_JOINTS,0.0);
-                Vector targetJointValuesRArm(NR_ARM_JOINTS,0.0);
-
-                targetJointValuesLArm(0)= -82.195; targetJointValuesLArm(1)= 23.959 ; targetJointValuesLArm(2)= 57.558;
-                targetJointValuesLArm(3)= 77.413; targetJointValuesLArm(4)= -0.082054; targetJointValuesLArm(5)= -6.1247;
-                targetJointValuesLArm(6)= -3.1478;
-
-                targetJointValuesRArm(0)= -42.103; targetJointValuesRArm(1)= 25.138 ; targetJointValuesRArm(2)= 29.981;
-                targetJointValuesRArm(3)= 98.824; targetJointValuesRArm(4)= 4.8594; targetJointValuesRArm(5)= -7.4531;
-                targetJointValuesRArm(6)= -9.3197;
-
-
-                VectorOf<int> jointsToSetA;
-                VectorOf<int> modes;
-                for (int i=0;i<NR_ARM_JOINTS;i++)
-                {
-                    jointsToSetA.push_back(i);
-                    modes.push_back(VOCAB_CM_POSITION);
-                }
-                modeLeftArm->setControlModes(jointsToSetA.size(),jointsToSetA.getFirst(),modes.getFirst());
-                modeRightArm->setControlModes(jointsToSetA.size(),jointsToSetA.getFirst(),modes.getFirst());
-
-                posLeftArm->positionMove(NR_ARM_JOINTS,jointsToSetA.getFirst(),targetJointValuesLArm.data());
-                posRightArm->positionMove(NR_ARM_JOINTS,jointsToSetA.getFirst(),targetJointValuesRArm.data());
 
             }
             else
