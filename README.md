@@ -1,9 +1,13 @@
 # icub-selftouch-with-gaze-generator
-To command the iCub simulator to points in Cartesian space where the end-effectors (palms) would intersect and the robot will simultaneously gaze at them. Logs all the corresponding joint configurations.
+To command the iCub simulator to points in Cartesian space where the end-effectors (palms or palm and finger) would intersect and the robot will simultaneously gaze at them. Logs all the corresponding joint configurations.
 
-The operation is illustrated in this video: https://youtu.be/TX1qlbDYcIU
 
-Note: **do not use on the real robot!**
+
+The operation is illustrated in these videos:
+- finger to palm (orientation unconstrained): https://youtu.be/ab-CgkLOlMw
+- palm to palm: https://youtu.be/TX1qlbDYcIU
+
+Note: The code has not been tested on the real robot. Some options - e.g. palm to palm configurations - are certainly **not to used on the real robot!**
 
 Note also that the solutions are a result of optimization and do not match perfectly with the desired target and hence also the 3 chains (2 arms, 1 gaze) do not intersect perfectly in 1 point in the operational space. 
 
@@ -42,11 +46,16 @@ With this flag, a random sequence of the targets is followed (a permutation of t
 #define TARGET_SEQUENCE_RANDOM 1
 ```
 
+The end-effector of the left arm is always the palm. For the right arm, tip of index finger can be chosen:
+```c
+#define USE_FINGER_ON_RIGHT_ARM 1
+```
 The user can also choose:
 ```c
 #define VISUALIZE_TARGET_IN_ICUBSIM 1 //red sphere in icubSim marks the target
 #define ASK_FOR_ARM_POSE_ONLY 1 //to ask for and log solutions for arm poses without commanding the simulator
 ```
+
 The latter setting can be applied to the arm Cartesian controllers (see also http://wiki.icub.org/brain/icub_cartesian_interface.html); however, this is not possible to apply to the gaze controller that has no such methods and the robot/simulator needs to be commanded (http://wiki.icub.org/iCub/main/dox/html/icub_gaze_interface.html).
 
 ```c
