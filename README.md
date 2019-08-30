@@ -9,7 +9,7 @@ The operation is illustrated in these videos:
 - finger to palm (orientation unconstrained): https://youtu.be/ab-CgkLOlMw
 - palm to palm: https://youtu.be/TX1qlbDYcIU
 
-Note: The code has not been tested on the real robot. Some options - e.g. palm to palm configurations - are certainly **not to used on the real robot!**
+Note: The code has not been tested on the real robot. Some options - e.g. palm to palm configurations - are certainly **not to be used on the real robot!**
 
 Note also that the solutions are a result of optimization and do not match perfectly with the desired target and hence also the 3 chains (2 arms, 1 gaze) do not intersect perfectly in 1 point in the operational space. 
 
@@ -58,7 +58,7 @@ The user can also choose:
 #define ASK_FOR_ARM_POSE_ONLY 1 //to ask for and log solutions for arm poses without commanding the simulator
 ```
 
-The latter setting can be applied to the arm Cartesian controllers (see also http://wiki.icub.org/brain/icub_cartesian_interface.html); however, this is not possible to apply to the gaze controller that has no such methods and the robot/simulator needs to be commanded (http://wiki.icub.org/iCub/main/dox/html/icub_gaze_interface.html).
+The latter setting can be applied to the arm Cartesian controllers (see also http://www.icub.org/software_documentation/icub_cartesian_interface.html); however, this is not possible to apply to the gaze controller that has no such methods and the robot/simulator needs to be commanded (http://wiki.icub.org/iCub/main/dox/html/icub_gaze_interface.html).
 
 ```c
 #define LOG_INTO_FILE 1
